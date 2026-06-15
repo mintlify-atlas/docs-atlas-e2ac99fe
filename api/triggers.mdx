@@ -1,0 +1,179 @@
+---
+title: "CronTrigger and trigger configuration in Tabsdata"
+sidebarTitle: "Triggers"
+description: "Reference for Tabsdata trigger options: CronTrigger for scheduled runs, ALL_DEPS for reactive pipelines, and manual-only configuration via trigger_by=None."
+---
+
+Triggers control **when** a Tabsdata function runs. Every `@td.publisher`, `@td.transformer`, and `@td.subscriber` accepts a `trigger_by` parameter that specifies the trigger strategy. Tabsdata supports three fundamental modes: reactive (data-driven), scheduled (cron-based), and manual-only.
+
+---
+
+## Trigger modes at a glance
+
+| `trigger_by` value | When the function runs |
+|--------------------|------------------------|
+| `td.ALL_DEPS` | Automatically when **any** input table receives new data (default for transformers and subscribers) |
+| `"table_name"` or `["t1", "t2"]` | Automatically when the named table(s) receive new data |
+| `td.CronTrigger("0 9 * * 1-5")` | On a cron schedule, regardless of upstream data changes |
+| `None` | Manual trigger only — never runs automatically |
+
+---
+
+## `td.ALL_DEPS`
+
+```python
+td.ALL_DEPS  # the string "*"
+```
+
+`ALL_DEPS` is a sentinel constant that instructs the server to trigger the function whenever **any** of its declared input tables is updated. It is the default `trigger_by` for `@td.transformer` and `@td.subscriber`, making pipelines reactive out of the box.
+
+```python
+import tabsdata as td
+
+@td.transformer(
+    input_tables=["orders", "products"],
+    output_tables="enriched_orders",
+    trigger_by=td.ALL_DEPS,  # default — can be omitted
+)
+def enrich(orders: td.TableFrame, products: td.TableFrame) -> td.TableFrame:
+    return orders.join(products, on="product_id")
+```
+
+---
+
+## `CronTrigger`
+
+Schedule a function to run on a time-based cron expression. Optionally bound the active period with `start` and `end` datetimes.
+
+```python
+import tabsdata as td
+from datetime import datetime, timezone
+
+@td.publisher(
+    source=td.LocalFileSource("/data/daily_export.csv"),
+    tables="finance/daily_report",
+    trigger_by=td.CronTrigger(
+        mask="0 6 * * 1-5",          # 06:00 UTC, Mon–Fri
+        start=datetime(2024, 1, 1, tzinfo=timezone.utc),
+        end=datetime(2025, 12, 31, 23, 59, tzinfo=timezone.utc),
+    ),
+)
+def load_daily(tf: td.TableFrame) -> td.TableFrame:
+    return tf
+```
+
+<ParamField path="mask" type="str" required>
+  A standard 5-field cron expression in the form
+  `"minute hour day-of-month month day-of-week"`.
+
+  Examples:
+  - `"0 * * * *"` — every hour on the hour
+  - `"0 9 * * 1-5"` — 09:00 every weekday
+  - `"*/15 * * * *"` — every 15 minutes
+  - `"0 0 1 * *"` — midnight on the first of every month
+
+  Predefined `@`-style shorthands (e.g. `@daily`) are **not** supported. The
+  expression must be exactly 5 whitespace-separated fields and must be a valid
+  cron pattern.
+</ParamField>
+
+<ParamField path="start" type="datetime | str | None" default="None">
+  The earliest datetime at which the trigger may fire. Must be **timezone-aware**.
+  The trigger is silently skipped for any scheduled time before `start`.
+
+  Accepts a `datetime` object or an ISO 8601 string with timezone info, e.g.
+  `"2024-06-01T00:00:00Z"`.
+</ParamField>
+
+<ParamField path="end" type="datetime | str | None" default="None">
+  The latest datetime at which the trigger may fire. Must be **timezone-aware**.
+  After `end`, the trigger becomes permanently inactive.
+
+  `start` must be strictly earlier than `end`.
+</ParamField>
+
+<Note>
+Both `start` and `end` must be timezone-aware `datetime` objects (or ISO 8601 strings with a timezone). Naive datetimes (without timezone info) will raise a `DecoratorConfigurationError`.
+</Note>
+
+---
+
+## Trigger-by table name(s)
+
+Pass a string or list of strings to trigger only when specific upstream tables are updated. The named tables must be a subset of `input_tables`.
+
+```python
+@td.transformer(
+    input_tables=["orders", "products", "customers"],
+    output_tables="summary",
+    trigger_by="orders",           # trigger only on orders updates
+)
+def summarize(orders, products, customers): ...
+
+@td.transformer(
+    input_tables=["orders", "products"],
+    output_tables="enriched",
+    trigger_by=["orders", "products"],   # trigger on either
+)
+def enrich(orders, products): ...
+```
+
+---
+
+## Manual-only trigger
+
+Passing `trigger_by=None` disables all automatic triggering. The function will only execute when triggered manually via the CLI (`td fn trigger`) or the API.
+
+```python
+@td.publisher(
+    source=td.LocalFileSource("/data/backfill.parquet"),
+    tables="finance/backfill",
+    trigger_by=None,   # manual only
+)
+def backfill(tf: td.TableFrame) -> td.TableFrame:
+    return tf
+```
+
+<Note>
+For `@td.publisher`, `trigger_by=None` is already the default because publishers have no upstream Tabsdata tables to react to. Explicitly setting `trigger_by=None` for transformers and subscribers opts them out of automatic reactive execution.
+</Note>
+
+---
+
+## `StageTrigger`
+
+`StageTrigger` is used internally when a function is invoked by a stage worker (a server-side batch ingestion component). It is not typically constructed by end users.
+
+---
+
+## Trigger interaction summary
+
+<CardGroup cols={2}>
+  <Card title="Reactive pipelines" icon="bolt">
+    Use `trigger_by=td.ALL_DEPS` (the default) for transformers and subscribers
+    that should process data as soon as upstream tables are updated. This
+    creates a push-based, event-driven pipeline.
+  </Card>
+  <Card title="Scheduled pipelines" icon="clock">
+    Use `trigger_by=td.CronTrigger("...")` when you need to rate-limit
+    execution, align with external schedules, or decouple upstream update
+    frequency from downstream processing frequency.
+  </Card>
+  <Card title="Selective reactivity" icon="filter">
+    Pass a specific table name or list to trigger only on certain upstream
+    changes—useful when one input changes frequently but only certain changes
+    should drive re-computation.
+  </Card>
+  <Card title="Manual control" icon="hand">
+    Use `trigger_by=None` for backfill jobs, ad-hoc analyses, or any function
+    that should never run automatically and must be invoked explicitly.
+  </Card>
+</CardGroup>
+
+---
+
+## Related pages
+
+- [Decorators](/api/decorators) — `trigger_by` parameter on each decorator
+- [Guides: Scheduling](/guides/scheduling) — scheduling patterns and best practices
+- [CLI: fn](/cli/fn) — manually trigger functions from the command line

@@ -1,0 +1,171 @@
+---
+title: "Collections: Organizing functions and tables"
+sidebarTitle: "Collections"
+description: "Collections are named workspaces in Tabsdata that group related functions and their output tables under a shared namespace with access control."
+---
+
+A collection is a named workspace on the Tabsdata server that groups related functions and the tables those functions produce. Think of a collection as a project folder: every publisher, transformer, or subscriber you register lives inside a collection, and every table those functions write is namespaced under the same collection.
+
+## Table namespacing
+
+Tables in Tabsdata are always addressed using the pattern `collection_name/table_name`. For example, if a publisher in the `mydata` collection writes a table called `customers`, that table is referenced elsewhere as `mydata/customers`.
+
+```python
+# A transformer reading a table from another collection
+@td.transformer(
+    input_tables=["mydata/customers"],   # fully-qualified table reference
+    output_tables=["enriched"],          # written to the current collection
+)
+def enrich(customers: td.TableFrame) -> td.TableFrame:
+    return customers.with_columns(td.lit("active").alias("status"))
+```
+
+If the collection name is omitted when referencing a table inside a decorator, Tabsdata resolves the table against the **collection the function is registered in**.
+
+## Managing collections with the CLI
+
+<Steps>
+  <Step title="Create a collection">
+    ```bash
+    td collection create --name mydata
+    ```
+  </Step>
+  <Step title="List all collections">
+    ```bash
+    td collection list
+    ```
+  </Step>
+  <Step title="Delete a collection">
+    ```bash
+    td collection delete --name mydata
+    ```
+  </Step>
+</Steps>
+
+<Warning>
+  Deleting a collection removes all functions and tables registered within it. This action cannot be undone.
+</Warning>
+
+## Cross-collection permissions
+
+Collections are isolated by default. A function in collection `analytics` cannot read a table from collection `raw` unless an explicit inter-collection read permission has been granted.
+
+```bash
+# Allow the 'analytics' collection to read tables from 'raw'
+td collection add_perm --coll raw --to analytics
+```
+
+Once the permission is created, functions in `analytics` can reference tables using the fully-qualified name `raw/table_name` in their `input_tables` argument.
+
+Permissions can also be managed programmatically through the Python API:
+
+```python
+from tabsdata.api.tabsdata_server import TabsdataServer
+
+server = TabsdataServer("http://localhost:7777", "admin", "tabsdata")
+
+# Grant 'analytics' read access to tables in 'raw'
+raw_coll = server.get_collection("raw")
+raw_coll.create_permission(to_collection="analytics")
+
+# List current permissions on 'raw'
+for perm in raw_coll.permissions:
+    print(perm.to_collection.name, perm.granted_by)
+
+# Revoke a permission by its ID
+raw_coll.delete_permission("perm-id-here")
+```
+
+## Working with the Python API
+
+The `TabsdataServer` class provides a full Python API for collection management. Connect to the server and then use collection methods:
+
+```python
+from tabsdata.api.tabsdata_server import TabsdataServer
+
+server = TabsdataServer("http://localhost:7777", "admin", "tabsdata")
+
+# Create a collection
+coll = server.create_collection("mydata", description="My data project")
+
+# Retrieve an existing collection
+coll = server.get_collection("mydata")
+print(coll.name, coll.created_by, coll.created_on_str)
+
+# List all collections
+for c in server.list_collections():
+    print(c.name)
+
+# Update a collection's name or description
+server.update_collection("mydata", new_name="mydata_v2")
+
+# Delete a collection
+server.delete_collection("mydata_v2")
+```
+
+### Collection object reference
+
+The `Collection` object returned by `get_collection()` exposes the following key attributes and methods:
+
+<ParamField path="name" type="str">
+  The name of the collection.
+</ParamField>
+
+<ParamField path="description" type="str">
+  A human-readable description of the collection.
+</ParamField>
+
+<ParamField path="created_by" type="str">
+  Username of the user who created the collection.
+</ParamField>
+
+<ParamField path="created_on_str" type="str">
+  ISO 8601 timestamp string of when the collection was created.
+</ParamField>
+
+<ParamField path="functions" type="List[Function]">
+  List of all functions registered in the collection. Fetched lazily on access.
+</ParamField>
+
+<ParamField path="tables" type="List[Table]">
+  List of all tables currently stored in the collection. Fetched lazily on access.
+</ParamField>
+
+<ParamField path="permissions" type="List[InterCollectionPermission]">
+  List of inter-collection read permissions granted by this collection.
+</ParamField>
+
+## Tables inside a collection
+
+Tables are created automatically when a publisher or transformer runs for the first time and writes its output. You do not need to pre-create tables. Once a table exists you can inspect it:
+
+```python
+coll = server.get_collection("mydata")
+
+# List all tables in the collection
+for table in coll.tables:
+    print(table.name)
+
+# Get a specific table and download it
+table = coll.get_table("customers")
+table.download("/tmp/customers.parquet")
+
+# Sample the first 100 rows as a Polars DataFrame
+df = table.sample(len=100)
+print(df)
+```
+
+<Tip>
+  Use `table.get_schema()` to inspect the column types of a table without downloading its full contents.
+</Tip>
+
+## Related pages
+
+<CardGroup cols={2}>
+  <Card title="Functions" icon="function" href="/concepts/functions">
+    Learn how publishers, transformers, and subscribers register tables into collections.
+  </Card>
+  <Card title="CLI: collection" icon="terminal" href="/cli/collection">
+    Full CLI reference for collection management commands.
+  </Card>
+</CardGroup>

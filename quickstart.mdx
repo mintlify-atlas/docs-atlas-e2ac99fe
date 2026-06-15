@@ -1,47 +1,208 @@
 ---
-title: "Quickstart"
-description: "Begin with a guide on the fastest path to a successful outcome"
+title: "Get Started with Tabsdata in Minutes"
+sidebarTitle: "Quickstart"
+description: "Install Tabsdata, start the server, and build your first publisher → transformer → subscriber pipeline using real example code and the td CLI."
 ---
 
-Describe how someone begins using your product. What is the first thing they need to do? Are there any prerequisites?
-
-A quickstart should take someone from zero to using your product. They'll get a quick win and a sense of what they can accomplish.
-
-## Prerequisites
-
-Before you begin, you must have:
-
-- Requirement one (for example, Node.js 18+, a free account, an API key)
-- Requirement two (for example, a compatible device, a compatible browser, a compatible operating system)
-
-## Get started
+This guide walks you through every step needed to run your first end-to-end Tabsdata pipeline. You will install the package, start the server, log in, create a collection, register three functions, trigger them, and inspect the output — all in a single terminal session.
 
 <Steps>
-  <Step title="Install">
-    Describe how to install your product or sign up.
+
+  <Step title="Install Tabsdata">
+    Install the full binary distribution from PyPI. The `[all]` extra pulls in the compiled `tdserver` binary along with all connector dependencies.
 
     ```bash
-    npm install your-package
+    pip install "tabsdata[all]"
     ```
-  </Step>
-  <Step title="Configure">
-    Describe any setup or configuration needed before first use.
+
+    Tabsdata requires **Python 3.12**. Using a dedicated virtual environment is strongly recommended.
+
+    Verify the installation:
 
     ```bash
-    your-cli init
+    td --version
+    tdserver --version
     ```
   </Step>
-  <Step title="Run it">
-    Show the first thing a user does to see it working.
+
+  <Step title="Start the Tabsdata Server">
+    `tdserver` is the compiled Rust server binary that manages the table storage engine and execution runtime. Start it with:
 
     ```bash
-    your-cli start
+    tdserver start
+    ```
+
+    Check that it is running:
+
+    ```bash
+    tdserver status
+    ```
+
+    <Note>
+      Both `tdserver` and the `td` CLI must run on the **same host** for the default local configuration. The server stores all state under `~/.tabsdata` by default.
+    </Note>
+  </Step>
+
+  <Step title="Log In">
+    Authenticate the CLI against the running server. The default out-of-the-box credentials are shown below:
+
+    ```bash
+    td login --server localhost --user admin --password tabsdata --role sys_admin
+    ```
+
+    <Note>
+      The default admin password is `tabsdata`. Change it before exposing the server to any network. See [Installation](/installation) for details on securing your deployment.
+    </Note>
+  </Step>
+
+  <Step title="Create a Collection">
+    Collections are the top-level namespaces that group tables and functions together.
+
+    ```bash
+    td collection create --name examples --description "Examples"
+    ```
+
+    You can list all collections at any time with `td collection list`.
+  </Step>
+
+  <Step title="Generate the Example Files">
+    Tabsdata ships built-in example code you can scaffold with a single command:
+
+    ```bash
+    td examples --dir my-pipeline
+    cd my-pipeline/1-walkthrough
+    ```
+
+    The `1-walkthrough` folder contains `publisher.py`, `transformer.py`, `subscriber.py`, and a pre-populated `input/persons.csv` file. The steps below show the actual contents of those files.
+  </Step>
+
+  <Step title="Write the Publisher">
+    A publisher reads data from an external source and writes it into Tabsdata as a named table. The example publisher reads a local CSV file and exposes it as the `persons` table:
+
+    ```python publisher.py
+    import os
+    import tabsdata as td
+
+    @td.publisher(
+        source=td.LocalFileSource(os.path.join(os.getcwd(), "input", "persons.csv")),
+        tables="persons",
+    )
+    def pub(persons: td.TableFrame) -> td.TableFrame:
+        return persons
+    ```
+
+    The `@td.publisher` decorator binds the function to the source connector and declares the output table name. The function body receives a `TableFrame` representing the ingested data and returns it (optionally transformed) for storage.
+  </Step>
+
+  <Step title="Write the Transformer">
+    A transformer reads tables that already exist in Tabsdata, filters or reshapes them, and writes the results back as new tables. The example transformer splits the `persons` table into three nationality-based tables:
+
+    ```python transformer.py
+    import tabsdata as td
+
+    @td.transformer(input_tables="persons", output_tables=["spanish", "french", "german"])
+    def tfr(persons: td.TableFrame) -> (td.TableFrame, td.TableFrame, td.TableFrame):
+        persons = persons.select([
+            "identifier",
+            "name",
+            "surname",
+            "nationality",
+            "language",
+        ])
+        res = {}
+        for nationality in ["Spanish", "French", "German"]:
+            res[nationality] = persons.filter(td.col("nationality").eq(nationality)).drop(
+                "nationality"
+            )
+        return res["Spanish"], res["French"], res["German"]
+    ```
+
+    `trigger_by` defaults to `ALL_DEPS`, meaning this transformer runs automatically whenever `persons` is updated.
+  </Step>
+
+  <Step title="Write the Subscriber">
+    A subscriber reads one or more Tabsdata tables and delivers them to an external destination. The example subscriber exports the `spanish` and `french` tables to local JSONL files:
+
+    ```python subscriber.py
+    import os
+    import tabsdata as td
+
+    @td.subscriber(
+        tables=["spanish", "french"],
+        destination=td.LocalFileDestination([
+            os.path.join(os.getcwd(), "output", "spanish.jsonl"),
+            os.path.join(os.getcwd(), "output", "french.jsonl"),
+        ]),
+    )
+    def sub(
+        spanish: td.TableFrame, french: td.TableFrame
+    ) -> (td.TableFrame, td.TableFrame):
+        return spanish, french
     ```
   </Step>
+
+  <Step title="Register the Functions">
+    Register each function with the server by pointing `td fn register` at the file and function name using the `path::function` syntax:
+
+    ```bash
+    # Register the publisher
+    td fn register --coll examples --path publisher.py::pub
+
+    # Register the transformer
+    td fn register --coll examples --path transformer.py::tfr
+
+    # Register the subscriber
+    td fn register --coll examples --path subscriber.py::sub
+    ```
+
+    Confirm registration by listing all functions in the collection:
+
+    ```bash
+    td fn list --coll examples
+    ```
+  </Step>
+
+  <Step title="Trigger Execution">
+    Trigger the publisher. Because the transformer and subscriber declare automatic dependencies, all three functions run in sequence — the server resolves the full dependency graph for you:
+
+    ```bash
+    td fn trigger --coll examples --name pub
+    ```
+
+    The CLI monitors the execution in real time and prints the status of each function run. To trigger without monitoring, add the `--detach` flag and inspect the plan later:
+
+    ```bash
+    td fn trigger --coll examples --name pub --detach
+    ```
+  </Step>
+
+  <Step title="Inspect the Results">
+    Check the schema of a table that was populated:
+
+    ```bash
+    td table schema --coll examples --name persons
+    td table schema --coll examples --name spanish
+    ```
+
+    Inspect detailed information about a registered function:
+
+    ```bash
+    td fn info --coll examples --name pub
+    ```
+
+    Verify the output files were written by the subscriber:
+
+    ```bash
+    # Linux / macOS
+    ls output/*
+
+    # Windows
+    dir output\*
+    ```
+  </Step>
+
 </Steps>
 
 <Tip>
-  Give people a way to get help. This could be a link to a support page, a chat with a customer support agent, or a forum for your product.
-
-  Example: Need help? Reach out to us at [support@yourcompany.com](mailto:support@yourcompany.com).
+  You now have a working pub/sub data pipeline. To go deeper, explore [Core Concepts](/concepts/overview) to understand collections, dependency graphs, and table versioning, or browse [Connectors](/connectors/overview) to connect your pipeline to S3, Azure Storage, PostgreSQL, Kafka, Snowflake, and many more sources and destinations.
 </Tip>

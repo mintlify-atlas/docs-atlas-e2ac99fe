@@ -1,0 +1,173 @@
+---
+title: "Python decorator API: publisher, transformer, subscriber"
+sidebarTitle: "Decorators"
+description: "Reference for the three Tabsdata decorators—publisher, transformer, and subscriber—that register Python functions as reactive data pipeline nodes."
+---
+
+Tabsdata uses a decorator-based programming model to register Python functions as pipeline nodes. Applying `@td.publisher`, `@td.transformer`, or `@td.subscriber` to a function tells the Tabsdata server where data comes from, what tables it reads and writes, and what event should trigger execution. The decorated function itself receives and returns `TableFrame` objects; the decorator wires up the I/O plumbing around it.
+
+<Note>
+Import the library with `import tabsdata as td` to access all three decorators from a single namespace.
+</Note>
+
+---
+
+## `@td.publisher`
+
+Publishers pull data from an external source (files, databases, cloud storage) and write it into one or more Tabsdata tables. The decorated function receives one or more `TableFrame` objects—one per source query or file—and must return a `TableFrame` (or list of `TableFrame` objects) to be stored.
+
+```python
+@td.publisher(
+    source=td.LocalFileSource("/data/sales/*.csv", format=td.CSVFormat()),
+    tables="sales_raw",
+    trigger_by=td.CronTrigger("0 6 * * *"),
+)
+def load_sales(tf: td.TableFrame) -> td.TableFrame:
+    return tf.filter(td.col("amount") > 0)
+```
+
+<ParamField path="source" type="SourcePlugin" required>
+  The input source plugin describing where to read data from. Accepted types are
+  `LocalFileSource`, `S3Source`, `AzureSource`, `GCSSource`, `MySQLSource`,
+  `PostgresSource`, `OracleSource`, `MariaDBSource`, or any custom `SourcePlugin`
+  implementation. See [Inputs](/api/inputs) for constructor details.
+</ParamField>
+
+<ParamField path="tables" type="str | List[str]" required>
+  The name or list of names of the Tabsdata tables to write the function's
+  output into. Must match the number of `TableFrame` objects returned by the
+  function. Can also be a `TableOutput` instance.
+</ParamField>
+
+<ParamField path="name" type="str" default="function name">
+  Override the name under which this function is registered in the Tabsdata
+  server. If omitted, the Python function name is used.
+</ParamField>
+
+<ParamField path="trigger_by" type="CronTrigger | None" default="None">
+  What causes this publisher to execute. Pass a `CronTrigger` for scheduled
+  runs, or `None` (the default) for manual-only triggering. Publishers cannot
+  subscribe to upstream tables, so list-of-table triggers are not applicable.
+  See [Triggers](/api/triggers) for details.
+</ParamField>
+
+<ParamField path="on_tables" type="OnTablesSpec" default="None">
+  Actions to perform on the output tables after the function completes, such as
+  data-quality checks. Defaults to `None`.
+</ParamField>
+
+---
+
+## `@td.transformer`
+
+Transformers read from one or more Tabsdata tables, transform the data, and write the result to one or more output tables. The decorated function receives one `TableFrame` argument per entry in `input_tables` and must return a `TableFrame` (or list) matching `output_tables`.
+
+```python
+@td.transformer(
+    input_tables="sales_raw",
+    output_tables=["sales_daily", "sales_summary"],
+    trigger_by=td.ALL_DEPS,
+)
+def transform_sales(raw: td.TableFrame) -> tuple[td.TableFrame, td.TableFrame]:
+    daily = raw.group_by(td.col("date")).agg(td.col("amount").sum())
+    summary = raw.select(td.col("region"), td.col("amount"))
+    return daily, summary
+```
+
+<ParamField path="input_tables" type="str | List[str]" required>
+  The Tabsdata table name(s) to subscribe to and receive as function arguments.
+  Pass a single string for one table or a list for multiple. Can also be a
+  `TableInput` instance directly.
+</ParamField>
+
+<ParamField path="output_tables" type="str | List[str]" required>
+  The Tabsdata table name(s) to write the function's return value(s) into.
+  The count must match the number of `TableFrame` objects returned. Can also be
+  a `TableOutput` instance.
+</ParamField>
+
+<ParamField path="name" type="str" default="function name">
+  Override the registration name for this function.
+</ParamField>
+
+<ParamField path="trigger_by" type="ALL_DEPS | None | str | List[str] | CronTrigger" default="ALL_DEPS">
+  The trigger strategy. Defaults to `ALL_DEPS`, meaning the transformer runs
+  whenever any of its input tables receives new data. Pass `None` for
+  manual-only execution, a table name string (or list) to trigger on specific
+  tables, or a `CronTrigger` for time-based scheduling.
+</ParamField>
+
+<ParamField path="on_output_tables" type="OnTablesSpec" default="None">
+  Post-execution actions to apply to the output tables.
+</ParamField>
+
+---
+
+## `@td.subscriber`
+
+Subscribers read from one or more Tabsdata tables and write the data to an external destination (files, databases, cloud storage). The decorated function receives one `TableFrame` per subscribed table and does not need to return a value—the destination plugin handles output.
+
+```python
+@td.subscriber(
+    tables="sales_summary",
+    destination=td.S3Destination(
+        uri="s3://my-bucket/exports/sales_summary.parquet",
+        credentials=td.S3AccessKeyCredentials(
+            aws_access_key_id=td.EnvironmentSecret("AWS_KEY_ID"),
+            aws_secret_access_key=td.EnvironmentSecret("AWS_SECRET"),
+        ),
+    ),
+    trigger_by=td.ALL_DEPS,
+)
+def export_summary(tf: td.TableFrame) -> td.TableFrame:
+    return tf
+```
+
+<ParamField path="tables" type="str | List[str]" required>
+  The Tabsdata table name(s) to read from. A single string or a list. Can also
+  be a `TableInput` instance.
+</ParamField>
+
+<ParamField path="destination" type="DestinationPlugin" required>
+  The output destination plugin describing where to write the data. Accepted
+  types are `LocalFileDestination`, `S3Destination`, `AzureDestination`,
+  `GCSDestination`, `MySQLDestination`, `PostgresDestination`,
+  `OracleDestination`, `MariaDBDestination`, or any custom `DestinationPlugin`.
+  See [Outputs](/api/outputs) for constructor details.
+</ParamField>
+
+<ParamField path="name" type="str" default="function name">
+  Override the registration name for this function.
+</ParamField>
+
+<ParamField path="trigger_by" type="ALL_DEPS | None | str | List[str] | CronTrigger" default="ALL_DEPS">
+  The trigger strategy. Defaults to `ALL_DEPS`. Pass `None` for manual-only
+  execution, a table name (or list) to trigger on specific upstream tables, or
+  a `CronTrigger` for time-based scheduling.
+</ParamField>
+
+---
+
+## `ALL_DEPS` sentinel
+
+```python
+td.ALL_DEPS  # equals the string "*"
+```
+
+`ALL_DEPS` is the default `trigger_by` value for transformers and subscribers. It tells the server to trigger the function whenever **any** of the function's declared input tables receives new data. Passing `trigger_by=None` disables automatic triggering entirely (manual runs only).
+
+<Tip>
+Use `trigger_by=ALL_DEPS` during development so your pipeline reacts immediately to upstream changes, and switch to a `CronTrigger` for production batch jobs where you need rate limiting or a fixed schedule.
+</Tip>
+
+---
+
+## Related pages
+
+- [Inputs](/api/inputs) — source plugin constructors
+- [Outputs](/api/outputs) — destination plugin constructors
+- [Triggers](/api/triggers) — `CronTrigger` reference
+- [TableFrame](/api/tableframe) — the data manipulation API
+- [Publishing data](/guides/publishing-data) — end-to-end publisher guide
+- [Transforming data](/guides/transforming-data) — end-to-end transformer guide
+- [Subscribing data](/guides/subscribing-data) — end-to-end subscriber guide

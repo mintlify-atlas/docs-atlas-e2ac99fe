@@ -1,0 +1,99 @@
+---
+title: "Connectors: integrating external data with Tabsdata"
+sidebarTitle: "Overview"
+description: "Connect Tabsdata to files, SQL databases, cloud warehouses, event streams, and more — or build your own custom plugin."
+---
+
+Connectors bridge the gap between Tabsdata and the external world. A **source connector** is used inside a `@publisher` decorator to pull data from an external system into a Tabsdata collection, while a **destination connector** is used inside a `@subscriber` decorator to push processed data back out to an external system. Every built-in connector is a subclass of either `SourcePlugin` or `DestinationPlugin`, which means you can also write your own custom connectors that follow the same interface.
+
+<CardGroup cols={2}>
+  <Card title="File & Cloud Storage" icon="file" href="/connectors/file-storage">
+    Read and write CSV, Parquet, Avro, NDJSON, and Log files from local disk, Amazon S3, Azure Blob Storage, or Google Cloud Storage.
+  </Card>
+  <Card title="SQL Databases" icon="database" href="/connectors/databases">
+    Connect to MySQL, MariaDB, PostgreSQL, Oracle, Microsoft SQL Server, and more — including Change Data Capture (CDC) triggers.
+  </Card>
+  <Card title="Cloud Warehouses & Analytics" icon="cloud" href="/connectors/cloud-warehouses">
+    Push data to Snowflake, BigQuery, Databricks, MongoDB, and Salesforce using purpose-built connectors.
+  </Card>
+  <Card title="Event Streams" icon="bolt" href="/connectors/streaming">
+    Consume messages from Kafka topics and trigger publishers whenever new data arrives, with support for Avro, JSON, and Protobuf schemas.
+  </Card>
+  <Card title="Custom Plugins" icon="puzzle-piece" href="/connectors/custom-plugins">
+    Implement `SourcePlugin` or `DestinationPlugin` to integrate any data source or destination not covered by the built-in connectors.
+  </Card>
+</CardGroup>
+
+## Available connectors at a glance
+
+### File and cloud storage
+
+| Class | Direction | Storage |
+|---|---|---|
+| `LocalFileSource` | Source | Local filesystem |
+| `LocalFileDestination` | Destination | Local filesystem |
+| `S3Source` | Source | Amazon S3 |
+| `S3Destination` | Destination | Amazon S3 |
+| `AzureSource` | Source | Azure Blob Storage |
+| `AzureDestination` | Destination | Azure Blob Storage |
+| `GCSSource` | Source | Google Cloud Storage |
+| `GCSDestination` | Destination | Google Cloud Storage |
+| `AWSGlue` | Catalog | AWS Glue (used with `S3Destination`) |
+
+### SQL databases
+
+| Class | Direction | Database |
+|---|---|---|
+| `MySQLSource` | Source | MySQL |
+| `MySQLDestination` | Destination | MySQL |
+| `MariaDBSource` | Source | MariaDB |
+| `MariaDBDestination` | Destination | MariaDB |
+| `PostgresSource` | Source | PostgreSQL |
+| `PostgresDestination` | Destination | PostgreSQL |
+| `OracleSource` | Source | Oracle |
+| `OracleDestination` | Destination | Oracle |
+| `MSSQLSource` | Source | Microsoft SQL Server |
+| `MSSQLDestination` | Destination | Microsoft SQL Server |
+
+### CDC triggers
+
+| Class | Direction | Database |
+|---|---|---|
+| `MySQLCdcConn` + `MySQLCdcTrigger` | Trigger | MySQL (binlog) |
+| `PostgresCdcConn` + `PostgresCdcTrigger` | Trigger | PostgreSQL (WAL) |
+| `Db2CdcConn` + `Db2CdcTrigger` | Trigger | IBM Db2 |
+
+### Cloud warehouses and analytics
+
+| Class | Direction | Platform |
+|---|---|---|
+| `SnowflakeDestination` | Destination | Snowflake |
+| `BigQueryConn` + `BigQueryDest` | Destination | Google BigQuery |
+| `DatabricksSource` | Source | Databricks |
+| `DatabricksDestination` | Destination | Databricks |
+| `MongoDBDestination` | Destination | MongoDB |
+| `SalesforceSource` | Source | Salesforce (SOQL) |
+| `SalesforceReportSource` | Source | Salesforce Reports |
+
+### Streaming
+
+| Class | Direction | Platform |
+|---|---|---|
+| `KafkaConn` + `KafkaTrigger` | Trigger | Apache Kafka |
+
+## Custom connectors
+
+If none of the built-in connectors meet your needs, you can write your own by subclassing `SourcePlugin` or `DestinationPlugin` from `tabsdata`.
+
+```python
+from tabsdata import SourcePlugin, DestinationPlugin
+```
+
+- **`SourcePlugin`** — implement `chunk(working_dir)` to download data and save it as Parquet files, then return their paths. The framework maps each returned path to a positional argument of your publisher function.
+- **`DestinationPlugin`** — implement `stream(working_dir, *results)` or the lower-level `chunk` / `write` pair to persist the TableFrame data your subscriber produces.
+
+See [Custom Plugins](/connectors/custom-plugins) for complete examples.
+
+<Note>
+Credentials for any connector can be stored securely using `EnvironmentSecret`, `HashiCorpSecret`, or other secret types. See [Secrets](/guides/secrets) for details.
+</Note>

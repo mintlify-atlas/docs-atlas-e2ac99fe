@@ -1,0 +1,119 @@
+---
+title: "Tabsdata architecture and key concepts"
+sidebarTitle: "Overview"
+description: "Learn how Tabsdata's pub/sub architecture connects publishers, transformers, and subscribers through a central Rust server using the Python SDK."
+---
+
+Tabsdata is a publish-subscribe (pub/sub) server for tabular data. It provides a central server that acts as a data hub — functions push data into it, transform data within it, and pull data out of it — creating a fully reactive, event-driven pipeline without manual orchestration.
+
+## Server and client model
+
+Tabsdata is built on a three-layer architecture:
+
+- **Rust server** — The core server process manages all table storage, versioning, access control, and execution scheduling. It exposes a REST API that clients talk to.
+- **Python SDK** (`tabsdata` package) — The primary way to write publisher, transformer, and subscriber functions and interact with the server from Python. Install it with `pip install "tabsdata[all]"`.
+- **CLI** (`td`) — A command-line interface for managing collections, registering functions, triggering executions, and inspecting tables without writing Python code.
+
+The server is stateless with respect to your functions: you register a Python file as a function bundle, and the server executes it in an isolated environment when triggered.
+
+## The three-function pipeline
+
+Every data flow in Tabsdata passes through up to three types of functions arranged in a directed acyclic graph:
+
+<Steps>
+  <Step title="Publisher">
+    Reads data from an **external source** (local file, S3, Azure Blob Storage, MySQL, PostgreSQL, Oracle, MariaDB, and others) and writes one or more tables into Tabsdata. Publishers are the entry points for all data.
+  </Step>
+  <Step title="Transformer">
+    Reads one or more **internal tables** already stored in Tabsdata, applies transformations using the TableFrame API, and writes the results to new internal tables (or external destinations). Transformers are purely in-server data processors.
+  </Step>
+  <Step title="Subscriber">
+    Reads one or more **internal tables** from Tabsdata and writes the data to an **external destination** (files, databases, cloud warehouses, streaming systems). Subscribers are the exit points for all data.
+  </Step>
+</Steps>
+
+In the binary distribution of Tabsdata, this pipeline is fully reactive: when a publisher runs successfully, any transformer that depends on its output tables is automatically triggered, and when those transformers complete, any downstream subscribers are triggered in turn — without you writing any orchestration code.
+
+## TableFrame: the in-memory data abstraction
+
+Inside every function, data is represented as a `TableFrame` — a lazy, Polars-backed in-memory abstraction that supports filtering, joining, aggregating, selecting, and more. Functions receive their input data as `TableFrame` objects and return `TableFrame` objects as output. The Tabsdata server handles materialisation, versioning, and lineage tracking transparently.
+
+## Key concepts at a glance
+
+<CardGroup cols={2}>
+  <Card title="Collections" icon="folder" href="/concepts/collections">
+    Named namespaces that group related functions and their output tables. Tables are addressed as `collection/table_name`.
+  </Card>
+  <Card title="Functions" icon="function" href="/concepts/functions">
+    Publisher, transformer, and subscriber functions decorated with `@td.publisher`, `@td.transformer`, or `@td.subscriber` and registered with the server.
+  </Card>
+  <Card title="TableFrame" icon="table" href="/concepts/tableframe">
+    The lazy, Polars-backed data abstraction used inside all Tabsdata functions for filtering, joining, and transforming tabular data.
+  </Card>
+  <Card title="Connectors" icon="plug" href="/connectors/overview">
+    Built-in and custom connectors for reading from and writing to files, databases, cloud warehouses, and streaming systems.
+  </Card>
+</CardGroup>
+
+## Execution flow example
+
+The following end-to-end example shows a publisher, a transformer, and a subscriber working together.
+
+<CodeGroup>
+```python publisher.py
+import tabsdata as td
+
+@td.publisher(
+    td.MySQLSource(
+        "mysql://127.0.0.1:3306/testing",
+        ["select * from CUSTOMERS"],
+        td.UserPasswordCredentials("admin", td.EnvironmentSecret("DB_PASSWORD")),
+    ),
+    tables=["customers"],
+)
+def pub(customers: td.TableFrame) -> td.TableFrame:
+    return customers
+```
+
+```python transformer.py
+import tabsdata as td
+
+@td.transformer(
+    input_tables=["mydata/customers"],
+    output_tables=["spanish"],
+)
+def tfr(customers: td.TableFrame) -> td.TableFrame:
+    return customers.filter(td.col("nationality").eq("spanish")).select(
+        ["identifier", "name", "surname", "language"]
+    )
+```
+
+```python subscriber.py
+import tabsdata as td
+
+@td.subscriber(
+    "mydata/spanish",
+    td.S3Destination(
+        "s3://my_bucket/spanish.parquet",
+        td.S3AccessKeyCredentials(
+            td.EnvironmentSecret("AWS_ACCESS_KEY_ID"),
+            td.EnvironmentSecret("AWS_SECRET_KEY"),
+        ),
+    ),
+)
+def sub(spanish: td.TableFrame) -> td.TableFrame:
+    return spanish
+```
+</CodeGroup>
+
+Once all three functions are registered, triggering `pub` via the CLI is enough to start the entire cascade:
+
+```bash
+td fn trigger --coll mydata --name pub
+```
+
+In the binary distribution, `tfr` and `sub` execute automatically after `pub` completes successfully.
+
+<Note>
+  Automatic cascade execution (publisher → transformer → subscriber) is a feature of the **Tabsdata binary distribution** available on PyPI. The open-source foundation supports manual triggering of each function independently.
+</Note>

@@ -1,0 +1,91 @@
+---
+title: "Tabsdata: Pub/Sub for Tables"
+sidebarTitle: "Introduction"
+description: "Tabsdata is a publish-subscribe server for tabular data that lets you build reactive data pipelines with Python decorators and a powerful TableFrame API."
+---
+
+Tabsdata is a publish-subscribe (pub/sub) server built specifically for tabular data. Just as a message broker routes events between producers and consumers, Tabsdata routes tables between **publishers** that ingest data from external sources, **transformers** that reshape and filter that data within the server, and **subscribers** that deliver results to downstream destinations. The entire flow is described in plain Python using lightweight decorators, so your data pipelines live alongside your application code and can be version-controlled like any other software.
+
+## How the Pub/Sub Model Works
+
+Every piece of data in Tabsdata lives in a named **table** inside a **collection**. Functions declare which tables they produce and consume, and the server automatically resolves the dependency graph. When a publisher runs and writes new data, every transformer that depends on those tables is triggered in order, and every subscriber that depends on those transformed tables is triggered next — all without you writing any orchestration logic.
+
+### Publishers
+
+A publisher reads data from an external source (a CSV file, a database, an S3 bucket, and more) and writes one or more tables into Tabsdata. You attach the `@td.publisher` decorator to a plain Python function and specify a **source connector** and the **table names** to populate.
+
+```python
+import os
+import tabsdata as td
+
+@td.publisher(
+    source=td.LocalFileSource(os.path.join(os.getcwd(), "input", "persons.csv")),
+    tables="persons",
+)
+def pub(persons: td.TableFrame) -> td.TableFrame:
+    return persons
+```
+
+### Transformers
+
+A transformer reads one or more tables that already exist in Tabsdata, applies selection, filtering, aggregation, or join operations using the **TableFrame API**, and writes the results back as new tables. Transformers are triggered automatically whenever their input tables are updated.
+
+```python
+import tabsdata as td
+
+@td.transformer(input_tables="persons", output_tables=["spanish", "french", "german"])
+def tfr(persons: td.TableFrame) -> (td.TableFrame, td.TableFrame, td.TableFrame):
+    persons = persons.select(["identifier", "name", "surname", "nationality", "language"])
+    res = {}
+    for nationality in ["Spanish", "French", "German"]:
+        res[nationality] = persons.filter(td.col("nationality").eq(nationality)).drop("nationality")
+    return res["Spanish"], res["French"], res["German"]
+```
+
+### Subscribers
+
+A subscriber reads one or more tables from Tabsdata and delivers them to an external destination such as a local file, an S3 bucket, or a relational database. Like transformers, subscribers are triggered automatically when their input tables change.
+
+```python
+import os
+import tabsdata as td
+
+@td.subscriber(
+    tables=["spanish", "french"],
+    destination=td.LocalFileDestination([
+        os.path.join(os.getcwd(), "output", "spanish.jsonl"),
+        os.path.join(os.getcwd(), "output", "french.jsonl"),
+    ]),
+)
+def sub(spanish: td.TableFrame, french: td.TableFrame) -> (td.TableFrame, td.TableFrame):
+    return spanish, french
+```
+
+## TableFrame API
+
+Tabsdata exposes a **TableFrame** abstraction for all in-pipeline data manipulation. TableFrame is backed by [Polars](https://github.com/pola-rs/polars), giving you a fast, memory-efficient, lazy evaluation engine with a familiar DataFrame API — including `select`, `filter`, `group_by`, `join`, `with_columns`, and more. All operations are expressed through `td.col(...)` expressions, keeping your transformation logic declarative and composable.
+
+## Command-Line Interface
+
+Every server-side operation — starting the server, logging in, creating collections, registering functions, triggering executions, and inspecting results — is available through the `td` CLI. The server itself is managed by the companion `tdserver` binary. See the [CLI overview](/cli/overview) for the full command reference.
+
+## Key Features
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Build and run your first publisher → transformer → subscriber pipeline in minutes.
+  </Card>
+  <Card title="Core Concepts" icon="book-open" href="/concepts/overview">
+    Learn about collections, functions, tables, and the dependency graph that drives execution.
+  </Card>
+  <Card title="Connectors" icon="plug" href="/connectors/overview">
+    Connect to local files, S3, Azure Storage, GCS, MySQL, PostgreSQL, Oracle, Kafka, Snowflake, and more.
+  </Card>
+  <Card title="API Reference" icon="code" href="/api/decorators">
+    Full reference for the `@td.publisher`, `@td.transformer`, and `@td.subscriber` decorators and all supporting types.
+  </Card>
+</CardGroup>
+
+<Note>
+  The `tabsdata` package distributed on [PyPI](https://pypi.org/project/tabsdata/) is a **binary distribution** of the Tabsdata Enterprise Package, built on the open-source foundation. It ships pre-compiled server binaries for Linux, macOS, and Windows and is installed with `pip install "tabsdata[all]"`. The open-source repository contains the Python client library and connector framework; the compiled `tdserver` binary is included only in the PyPI distribution.
+</Note>

@@ -1,0 +1,90 @@
+---
+title: "td CLI: command reference overview"
+sidebarTitle: "Overview"
+description: "Complete reference for the td command-line interface — install, authenticate, and manage every Tabsdata resource from your terminal."
+---
+
+The `td` CLI is the primary command-line interface for Tabsdata. It lets you authenticate to a running Tabsdata server, manage collections, register and trigger functions, inspect tables, and administer users and roles — all from your terminal. Every `td` command communicates with a Tabsdata server over HTTP or HTTPS, so you must log in before most operations.
+
+## Installation
+
+The `td` binary is bundled with the `tabsdata` Python package. Install it with pip:
+
+```bash
+pip install tabsdata
+```
+
+After installation, verify the CLI is available:
+
+```bash
+td --version
+```
+
+## Global flags
+
+These flags are accepted by every `td` command and subcommand.
+
+| Flag | Short | Description |
+|------|-------|-------------|
+| `--no-prompt` | | Disable all interactive prompts. If a prompt would be required, the command fails instead of waiting for input. Useful in CI/CD pipelines. |
+| `--help` | `-h` | Show help for the current command or subcommand and exit. |
+| `--version` | | Print the installed `tabsdata` client version and exit. |
+
+## Top-level commands
+
+| Command | Description |
+|---------|-------------|
+| `td login` | Authenticate to a Tabsdata server and save credentials locally. |
+| `td logout` | End the current session and remove saved credentials. |
+| `td status` | Check the health and status of the connected server. |
+| `td auth` | Manage SSL certificates for servers that use self-signed TLS. |
+| `td collection` | Create, inspect, update, and delete collections; manage cross-collection permissions. |
+| `td fn` | Register, update, trigger, enable, disable, and delete functions. |
+| `td table` | List, inspect, sample, download, and delete tables. |
+| `td user` | Create, update, and delete user accounts. |
+| `td role` | Create roles, assign permissions, and manage role membership. |
+| `td cron` | Start, stop, and list cron trigger workers for functions. |
+| `td stage` | Start, stop, and list stage workers for functions. |
+| `td exe` | Inspect and manage execution plans, transactions, function runs, workers, and logs. |
+| `td examples` | Generate a local folder of example use cases and/or open the examples guide. |
+| `td about` | Display build metadata and system information. |
+| `td info` | Show the license, third-party dependencies, and release notes. |
+| `td hints on\|off` | Toggle contextual CLI hints on or off. |
+
+## Logging in
+
+Before running any server-side command you must authenticate. The CLI will prompt for any values you omit:
+
+```bash
+td login --server https://my-tabsdata-server:8080 \
+         --user admin \
+         --password s3cr3t \
+         --role user
+```
+
+`--role` defaults to `user` when omitted. Credentials are cached locally so subsequent commands do not require you to log in again.
+
+```bash
+# Prompt-driven login (omit all flags)
+td login
+```
+
+To end the session:
+
+```bash
+td logout
+```
+
+<Note>
+**Pinned objects** — after you run `td collection pin --name my-collection`, all subsequent `td fn`, `td table`, and other commands that accept `--coll` will automatically use `my-collection` as the default collection, so you can omit `--coll` for the rest of your shell session. Run `td collection unpin` to clear the pin.
+</Note>
+
+## Getting help
+
+Append `--help` (or `-h`) to any command or subcommand:
+
+```bash
+td --help
+td collection --help
+td fn register --help
+```

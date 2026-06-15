@@ -1,0 +1,295 @@
+---
+title: "Publisher, Transformer, and Subscriber functions"
+sidebarTitle: "Functions"
+description: "Understand the three Tabsdata function types—publisher, transformer, and subscriber—their decorators, triggers, and execution model."
+---
+
+Functions are the primary building blocks of Tabsdata pipelines. Every data movement — ingesting from an external system, reshaping data inside Tabsdata, or exporting to an external destination — is implemented as a Python function decorated with one of three decorators from the `tabsdata` package.
+
+## The three function types
+
+<CardGroup cols={3}>
+  <Card title="Publisher" icon="upload">
+    Reads from an **external source** and writes one or more tables into Tabsdata. Entry point for all external data.
+  </Card>
+  <Card title="Transformer" icon="arrows-rotate">
+    Reads **internal tables** from Tabsdata, transforms them, and writes the results to new internal tables. Pure in-server data processing.
+  </Card>
+  <Card title="Subscriber" icon="download">
+    Reads **internal tables** from Tabsdata and writes the data to an **external destination**. Exit point for all processed data.
+  </Card>
+</CardGroup>
+
+---
+
+## Publisher
+
+A publisher is a function decorated with `@td.publisher`. It connects an external data source to a set of Tabsdata tables.
+
+### Decorator signature
+
+```python
+td.publisher(
+    source: SourcePlugin,
+    tables: TableOutput | str | List[str],
+    name: str = None,
+    trigger_by: PublisherTriggerBySpec = None,
+    on_tables: OnTablesSpec = None,
+) -> callable
+```
+
+<ParamField path="source" type="SourcePlugin" required>
+  The data source to read from. Built-in options include `LocalFileSource`, `S3Source`, `AzureSource`, `GCSSource`, `MySQLSource`, `PostgresSource`, `OracleSource`, `MariaDBSource`, and many more. You can also provide a custom `SourcePlugin` subclass.
+</ParamField>
+
+<ParamField path="tables" type="str | List[str]" required>
+  The name(s) of the Tabsdata table(s) that the function will write. One name per positional return value of the decorated function.
+</ParamField>
+
+<ParamField path="name" type="str">
+  The name used when registering this function on the server. Defaults to the Python function name.
+</ParamField>
+
+<ParamField path="trigger_by" type="CronTrigger | None">
+  A `CronTrigger` to schedule the publisher automatically, or `None` for manual-only triggering (the default for publishers).
+</ParamField>
+
+### Example
+
+```python
+import tabsdata as td
+
+@td.publisher(
+    td.MySQLSource(
+        "mysql://127.0.0.1:3306/mydb",
+        ["SELECT * FROM orders"],
+        td.UserPasswordCredentials("admin", td.EnvironmentSecret("DB_PASSWORD")),
+    ),
+    tables=["orders"],
+)
+def ingest_orders(orders: td.TableFrame) -> td.TableFrame:
+    # Optionally filter or lightly transform before writing
+    return orders
+```
+
+### Scheduled publisher with CronTrigger
+
+```python
+from datetime import timezone, datetime
+import tabsdata as td
+
+@td.publisher(
+    td.S3Source(
+        "s3://my-bucket/data/*.parquet",
+        td.S3AccessKeyCredentials(
+            td.EnvironmentSecret("AWS_ACCESS_KEY_ID"),
+            td.EnvironmentSecret("AWS_SECRET_KEY"),
+        ),
+    ),
+    tables=["daily_snapshot"],
+    trigger_by=td.CronTrigger(
+        mask="0 6 * * *",   # every day at 06:00 UTC
+        start=datetime(2024, 1, 1, tzinfo=timezone.utc),
+    ),
+)
+def daily_ingest(snapshot: td.TableFrame) -> td.TableFrame:
+    return snapshot
+```
+
+---
+
+## Transformer
+
+A transformer is a function decorated with `@td.transformer`. It reads one or more internal Tabsdata tables, processes them, and writes the results to one or more output tables.
+
+### Decorator signature
+
+```python
+td.transformer(
+    input_tables: TableInput | str | List[str],
+    output_tables: TableOutput | str | List[str],
+    name: str = None,
+    trigger_by: TransformerTriggerBySpec = ALL_DEPS,
+    on_output_tables: OnTablesSpec = None,
+) -> callable
+```
+
+<ParamField path="input_tables" type="str | List[str]" required>
+  The Tabsdata table(s) to read as input. Use fully-qualified names (`collection/table`) to reference tables from other collections.
+</ParamField>
+
+<ParamField path="output_tables" type="str | List[str]" required>
+  The Tabsdata table(s) the function will produce. Names are relative to the collection this function is registered in.
+</ParamField>
+
+<ParamField path="name" type="str">
+  Registration name on the server. Defaults to the Python function name.
+</ParamField>
+
+<ParamField path="trigger_by" type="str | List[str] | CronTrigger | None">
+  Controls what causes this transformer to run:
+  - `td.ALL_DEPS` (default `"*"`) — runs whenever **any** of its `input_tables` are updated.
+  - A table name or list of table names — runs only when those specific tables are updated.
+  - A `CronTrigger` — runs on a schedule regardless of upstream changes.
+  - `None` — never triggered automatically; must be triggered manually.
+</ParamField>
+
+### Example
+
+```python
+import tabsdata as td
+
+@td.transformer(
+    input_tables=["ingest/orders", "ingest/customers"],
+    output_tables=["enriched_orders"],
+)
+def enrich(orders: td.TableFrame, customers: td.TableFrame) -> td.TableFrame:
+    return orders.join(customers, on="customer_id", how="left")
+```
+
+### Transformer with selective trigger
+
+```python
+import tabsdata as td
+
+@td.transformer(
+    input_tables=["raw/events", "raw/metadata"],
+    output_tables=["filtered_events"],
+    # Only trigger when 'raw/events' is updated, not when metadata changes
+    trigger_by=["raw/events"],
+)
+def filter_events(events: td.TableFrame, metadata: td.TableFrame) -> td.TableFrame:
+    return events.filter(td.col("type").eq("click"))
+```
+
+---
+
+## Subscriber
+
+A subscriber is a function decorated with `@td.subscriber`. It reads one or more Tabsdata tables and exports the data to an external destination.
+
+### Decorator signature
+
+```python
+td.subscriber(
+    tables: TableInput | str | List[str],
+    destination: DestinationPlugin,
+    name: str = None,
+    trigger_by: SubscriberTriggerBySpec = ALL_DEPS,
+) -> callable
+```
+
+<ParamField path="tables" type="str | List[str]" required>
+  The Tabsdata table(s) to read. Use fully-qualified names to read from other collections.
+</ParamField>
+
+<ParamField path="destination" type="DestinationPlugin" required>
+  Where to write the output. Built-in options include `S3Destination`, `AzureDestination`, `GCSDestination`, `LocalFileDestination`, `MySQLDestination`, `PostgresDestination`, `OracleDestination`, `MariaDBDestination`, and many more.
+</ParamField>
+
+<ParamField path="name" type="str">
+  Registration name on the server. Defaults to the Python function name.
+</ParamField>
+
+<ParamField path="trigger_by" type="str | List[str] | CronTrigger | None">
+  Same semantics as the transformer `trigger_by`. Defaults to `ALL_DEPS`: runs whenever any of its input tables are updated.
+</ParamField>
+
+### Example
+
+```python
+import tabsdata as td
+
+@td.subscriber(
+    "analytics/enriched_orders",
+    td.S3Destination(
+        "s3://my-bucket/output/enriched_orders.parquet",
+        td.S3AccessKeyCredentials(
+            td.EnvironmentSecret("AWS_ACCESS_KEY_ID"),
+            td.EnvironmentSecret("AWS_SECRET_KEY"),
+        ),
+    ),
+)
+def export_orders(enriched_orders: td.TableFrame) -> td.TableFrame:
+    return enriched_orders
+```
+
+---
+
+## Registering functions
+
+Before a function runs on the server it must be **registered** — packaged into a bundle and uploaded. The CLI makes this a one-step operation:
+
+```bash
+td fn register \
+  --coll mydata \
+  --path /path/to/my_functions.py::ingest_orders \
+  --name ingest_orders
+```
+
+You can also register functions from Python:
+
+```python
+from tabsdata.api.tabsdata_server import TabsdataServer
+
+server = TabsdataServer("http://localhost:7777", "admin", "tabsdata")
+server.register_function(
+    collection_name="mydata",
+    function_path="/path/to/my_functions.py::ingest_orders",
+    description="Ingest orders from MySQL",
+)
+```
+
+<Note>
+  The `function_path` argument must be in the form `/path/to/file.py::python_function_name`. Tabsdata dynamically imports the file, reads the decorator, and bundles the code automatically.
+</Note>
+
+## Triggering functions manually
+
+```bash
+# Via CLI
+td fn trigger --coll mydata --name ingest_orders
+
+# Via Python
+server.trigger_function("mydata", "ingest_orders")
+```
+
+## Trigger types summary
+
+| Trigger value | Behaviour |
+|---|---|
+| `td.ALL_DEPS` (`"*"`) | Runs when **any** dependency table is updated (default for transformers/subscribers) |
+| `["table_a", "table_b"]` | Runs only when the listed tables are updated |
+| `td.CronTrigger("0 6 * * *")` | Runs on a cron schedule |
+| `None` | Never triggered automatically — manual only |
+
+## Execution model
+
+When the server invokes a function it:
+
+1. Creates an isolated Python environment with the bundled code and dependencies.
+2. Loads each input table (or external source) and passes it to the function as a `TableFrame` argument.
+3. Calls the decorated Python function.
+4. Materialises the returned `TableFrame`(s) and stores them as versioned tables in the collection.
+5. In the binary distribution, automatically queues dependent functions for execution.
+
+<Tip>
+  The `name` parameter in every decorator defaults to the Python function name. Override it when you want the registered server name to differ from the local function name (for example, when renaming without breaking downstream dependencies).
+</Tip>
+
+## Related pages
+
+<CardGroup cols={2}>
+  <Card title="TableFrame" icon="table" href="/concepts/tableframe">
+    The lazy data abstraction received and returned by every Tabsdata function.
+  </Card>
+  <Card title="API: Decorators" icon="code" href="/api/decorators">
+    Full API reference for publisher, transformer, and subscriber decorators.
+  </Card>
+  <Card title="Scheduling" icon="clock" href="/guides/scheduling">
+    How to use CronTrigger to schedule publishers and transformers.
+  </Card>
+  <Card title="CLI: fn" icon="terminal" href="/cli/fn">
+    CLI reference for registering, listing, triggering, and deleting functions.
+  </Card>
+</CardGroup>

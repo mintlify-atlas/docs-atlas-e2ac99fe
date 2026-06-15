@@ -1,0 +1,152 @@
+{
+  "projectType": "data-platform",
+  "projectName": "Tabsdata",
+  "projectDescription": "A publish-subscribe (pub/sub) server for tables that enables data engineers to discover, publish, transform, and consume tabular data across multiple sources and destinations via Python decorators and a CLI.",
+  "theme": "aspen",
+  "primaryColor": "#7ee72c",
+  "lightColor": "#e8f7e6",
+  "darkColor": "#32c0ec",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "installation"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/overview",
+              "concepts/collections",
+              "concepts/functions",
+              "concepts/tableframe"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/publishing-data",
+              "guides/transforming-data",
+              "guides/subscribing-data",
+              "guides/scheduling",
+              "guides/secrets"
+            ]
+          },
+          {
+            "group": "Connectors",
+            "pages": [
+              "connectors/overview",
+              "connectors/file-storage",
+              "connectors/databases",
+              "connectors/cloud-warehouses",
+              "connectors/streaming",
+              "connectors/custom-plugins"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "CLI Reference",
+        "groups": [
+          {
+            "group": "Overview",
+            "pages": [
+              "cli/overview"
+            ]
+          },
+          {
+            "group": "Commands",
+            "pages": [
+              "cli/auth",
+              "cli/collection",
+              "cli/fn",
+              "cli/table",
+              "cli/user",
+              "cli/server"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Python SDK",
+            "pages": [
+              "api/decorators",
+              "api/tableframe",
+              "api/inputs",
+              "api/outputs",
+              "api/credentials",
+              "api/secrets",
+              "api/triggers"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Pub/Sub model for tabular data with publisher, transformer, and subscriber function types",
+    "TableFrame API backed by Polars for in-memory data transformation (select, filter, aggregate, join)",
+    "Rich connector ecosystem: local files, S3, Azure Blob, GCS, MySQL/MariaDB, PostgreSQL, Oracle, Snowflake, BigQuery, Databricks, Kafka, MongoDB, MSSQL, Salesforce",
+    "Custom connector Plugin API (SourcePlugin / DestinationPlugin) for extensibility",
+    "Python decorator-based function registration (@td.publisher, @td.transformer, @td.subscriber)",
+    "Cron-based and dependency-driven trigger scheduling",
+    "CLI (`td`) for managing collections, functions, tables, users, and server state",
+    "Secret management via environment variables and HashiCorp Vault",
+    "Change Data Capture (CDC) connectors for MySQL, PostgreSQL, and Db2",
+    "Schema evolution support and data quality checks"
+  ],
+  "publicApiSurface": [
+    "td.publisher(source, tables, name, trigger_by, on_output_tables)",
+    "td.transformer(input_tables, output_tables, name, trigger_by, on_output_tables)",
+    "td.subscriber(input_tables, destination, name, trigger_by)",
+    "td.TableFrame — lazy frame API (select, filter, join, group_by, sort, with_columns, drop, rename, ...)",
+    "td.col(name) — column expression",
+    "td.lit(value) — literal expression",
+    "td.concat(frames) — concatenate TableFrames",
+    "td.LocalFileSource, td.S3Source, td.AzureSource, td.GCSSource",
+    "td.LocalFileDestination, td.S3Destination, td.AzureDestination, td.GCSDestination",
+    "td.MySQLSource / td.MySQLDestination",
+    "td.PostgresSource / td.PostgresDestination",
+    "td.OracleSource / td.OracleDestination",
+    "td.MariaDBSource / td.MariaDBDestination",
+    "td.SnowflakeDestination",
+    "td.BigQueryDest",
+    "td.DatabricksSource / td.DatabricksDestination",
+    "td.KafkaConn, td.KafkaTrigger",
+    "td.MongoDBDestination",
+    "td.MSSQLSource / td.MSSQLDestination",
+    "td.SalesforceSource / td.SalesforceReportSource",
+    "td.MySQLCdcConn / td.MySQLCdcTrigger",
+    "td.PostgresCdcConn / td.PostgresCdcTrigger",
+    "td.Db2CdcConn / td.Db2CdcTrigger",
+    "td.SourcePlugin — base class for custom source connectors",
+    "td.DestinationPlugin — base class for custom destination connectors",
+    "td.CronTrigger(mask, start, end)",
+    "td.EnvironmentSecret(var_name)",
+    "td.HashiCorpSecret(path, name)",
+    "td.UserPasswordCredentials(user, password)",
+    "td.S3AccessKeyCredentials(access_key_id, secret_access_key)",
+    "td.AzureAccountKeyCredentials(account_name, account_key)",
+    "td.GCPServiceAccountKeyCredentials(service_account_key)",
+    "td.CSVFormat, td.ParquetFormat, td.AvroFormat, td.NDJSONFormat, td.LogFormat",
+    "TabsdataServer Python API (Collection, Function, Table, Execution, Transaction objects)",
+    "CLI: td login / logout / status",
+    "CLI: td collection create/delete/list/info",
+    "CLI: td fn register/update/delete/trigger/list/info/enable/disable",
+    "CLI: td table delete/info/list",
+    "CLI: td user create/delete/list",
+    "CLI: td auth add_cert",
+    "CLI: td cron ...",
+    "CLI: td stage start/stop",
+    "CLI: td examples --dir / --guide"
+  ]
+}

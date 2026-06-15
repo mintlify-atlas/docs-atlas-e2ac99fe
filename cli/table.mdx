@@ -1,0 +1,202 @@
+---
+title: "td table: inspect and manage Tabsdata tables"
+sidebarTitle: "table"
+description: "List, inspect, sample, download, and delete Tabsdata tables — including time-travel queries by timestamp, transaction, or data version."
+---
+
+Tables are the outputs produced by Tabsdata functions. They are versioned, immutable snapshots maintained by the server; you never write to them directly. The `td table` command group lets you browse tables in a collection, inspect their schema, sample their rows, download them as Parquet files, and view historical data versions. Most subcommands support **time-travel** flags (`--at`, `--at-trx`, `--version`) that let you query the state of a table at a specific point in time.
+
+## Subcommands
+
+### `td table list`
+
+List all tables in a collection.
+
+```bash
+td table list --coll <coll> [--name <wildcard>] [--at <time>] [--at-trx <trx-id>]
+```
+
+**Flags**
+
+| Flag | Short | Required | Description |
+|------|-------|----------|-------------|
+| `--coll` | `-c` | Yes* | Collection whose tables are listed. Uses pinned collection if omitted. |
+| `--name` | | No | Name wildcard filter, e.g. `sales*` matches all tables starting with `sales`. |
+| `--at` | | No | Show tables as they existed at the given time. Accepts unix ms timestamp or `YYYY-MM-DD[THH[:MM[:SS[.sss]]]][Z]`. Mutually exclusive with `--at-trx`. |
+| `--at-trx` | | No | Show tables as they existed at the end of the given transaction ID. Mutually exclusive with `--at`. |
+
+Prints a table with columns: **Name**, **Function**.
+
+**Example**
+
+```bash
+td table list --coll analytics
+
+# Filter by name pattern
+td table list --coll analytics --name sales*
+
+# Point-in-time listing
+td table list --coll analytics --at 2024-06-01
+```
+
+---
+
+### `td table schema`
+
+Show the column schema (name and type) of a table.
+
+```bash
+td table schema --coll <coll> --name <name> [--at <time>] [--at-trx <trx-id>] [--version <version-id>]
+```
+
+**Flags**
+
+| Flag | Short | Required | Description |
+|------|-------|----------|-------------|
+| `--name` | | Yes* | Name of the table. |
+| `--coll` | `-c` | Yes* | Collection the table belongs to. |
+| `--at` | | No | Show schema at the given time. Mutually exclusive with `--at-trx` and `--version`. |
+| `--at-trx` | | No | Show schema at the end of the given transaction. Mutually exclusive with `--at` and `--version`. |
+| `--version` | | No | Show schema at a specific data version ID. Mutually exclusive with `--at` and `--at-trx`. |
+
+Prints a table with columns: **Column**, **Type**.
+
+**Example**
+
+```bash
+td table schema --coll analytics --name daily_sales
+
+# Schema at a specific time
+td table schema --coll analytics --name daily_sales --at 2024-06-01T12:00:00Z
+```
+
+---
+
+### `td table sample`
+
+Sample rows from a table and print them to the terminal. Optionally save the output as an NDJSON file.
+
+```bash
+td table sample --coll <coll> --name <name> \
+  [--len <rows>] [--offset <skip>] [--file <path>] \
+  [--at <time>] [--at-trx <trx-id>] [--version <version-id>]
+```
+
+**Flags**
+
+| Flag | Short | Required | Description |
+|------|-------|----------|-------------|
+| `--name` | | Yes* | Name of the table. |
+| `--coll` | `-c` | Yes* | Collection the table belongs to. |
+| `--len` | | No | Number of rows to return. Returns all rows if omitted. |
+| `--offset` | | No | Number of rows to skip before sampling. Defaults to `0`. |
+| `--file` | | No | Save the sample as an NDJSON file at this path. The parent directory must already exist. |
+| `--at` | | No | Sample data as it existed at the given time. Mutually exclusive with `--at-trx` and `--version`. |
+| `--at-trx` | | No | Sample at the end of the given transaction. Mutually exclusive with `--at` and `--version`. |
+| `--version` | | No | Sample at a specific data version ID. Mutually exclusive with `--at` and `--at-trx`. |
+
+**Example**
+
+```bash
+# Show first 10 rows
+td table sample --coll analytics --name daily_sales --len 10
+
+# Save 100 rows starting at row 50 to a file
+td table sample --coll analytics --name daily_sales \
+  --len 100 --offset 50 --file /tmp/sales_sample.ndjson
+
+# Sample historical data
+td table sample --coll analytics --name daily_sales --at 2024-01-15
+```
+
+---
+
+### `td table download`
+
+Download the full contents of a table as a Parquet file.
+
+```bash
+td table download --coll <coll> --name <name> --file <path> \
+  [--at <time>] [--at-trx <trx-id>] [--version <version-id>]
+```
+
+**Flags**
+
+| Flag | Short | Required | Description |
+|------|-------|----------|-------------|
+| `--name` | | Yes* | Name of the table. |
+| `--coll` | `-c` | Yes* | Collection the table belongs to. |
+| `--file` | | Yes* | Destination file path for the Parquet download. Parent directories must already exist. |
+| `--at` | | No | Download the table as it existed at the given time. Mutually exclusive with `--at-trx` and `--version`. |
+| `--at-trx` | | No | Download at the end of the given transaction. Mutually exclusive with `--at` and `--version`. |
+| `--version` | | No | Download a specific data version. Mutually exclusive with `--at` and `--at-trx`. |
+
+**Example**
+
+```bash
+td table download --coll analytics --name daily_sales --file /data/daily_sales.parquet
+
+# Download the version that existed at a past timestamp
+td table download --coll analytics --name daily_sales \
+  --file /data/daily_sales_jan.parquet \
+  --at 2024-01-31T23:59:59Z
+```
+
+---
+
+### `td table versions`
+
+List all data versions of a table, showing when each version was created and its current status.
+
+```bash
+td table versions --coll <coll> --name <name> [--details]
+```
+
+**Flags**
+
+| Flag | Short | Required | Description |
+|------|-------|----------|-------------|
+| `--coll` | `-c` | Yes* | Collection the table belongs to. |
+| `--name` | | Yes* | Name of the table. |
+| `--details` | | No | Flag. Include row count, column count, and schema hash for each version. |
+
+Prints a table with columns: **ID**, **Function ID**, **Plan ID**, **Created at**, **Status** (plus **Rows**, **Columns**, **Schema Hash** when `--details` is used).
+
+**Example**
+
+```bash
+td table versions --coll analytics --name daily_sales
+
+# With extra statistics
+td table versions --coll analytics --name daily_sales --details
+```
+
+---
+
+### `td table delete`
+
+Delete a table. Requires explicit confirmation.
+
+```bash
+td table delete --coll <coll> --name <name> --confirm delete
+```
+
+**Flags**
+
+| Flag | Short | Required | Description |
+|------|-------|----------|-------------|
+| `--name` | `-n` | Yes* | Name of the table to delete. |
+| `--coll` | `-c` | Yes* | Collection the table belongs to. |
+| `--confirm` | | Yes* | Must be the literal string `delete`. Prompted if omitted. |
+
+**Example**
+
+```bash
+td table delete --coll analytics --name daily_sales --confirm delete
+```
+
+---
+
+<Note>
+The `--at`, `--at-trx`, and `--version` time-travel flags are mutually exclusive on every subcommand that accepts them. Use `--at` for wall-clock queries, `--at-trx` to pin to a specific transaction boundary, or `--version` when you have a precise data version ID from `td table versions`.
+</Note>

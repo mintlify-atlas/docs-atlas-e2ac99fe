@@ -1,72 +1,112 @@
 {
   "$schema": "https://mintlify.com/docs.json",
-  "theme": "mint",
-  "name": "Mintlify Starter Kit",
+  "name": "Tabsdata",
+  "theme": "aspen",
   "colors": {
-    "primary": "#16A34A",
-    "light": "#07C983",
-    "dark": "#15803D"
+    "primary": "#7ee72c",
+    "light": "#e8f7e6",
+    "dark": "#32c0ec"
   },
-  "favicon": "/favicon.svg",
-  "navigation": {
-    "pages": [
-      {
-        "group": "Getting Started",
-        "pages": [
-          "index",
-          "quickstart"
-        ]
-      }
-    ],
-    "global": {
-      "anchors": [
-        {
-          "anchor": "Documentation",
-          "href": "https://mintlify.com/docs",
-          "icon": "book-open-cover"
-        },
-        {
-          "anchor": "Blog",
-          "href": "https://mintlify.com/blog",
-          "icon": "newspaper"
-        }
-      ]
-    }
-  },
+  "favicon": "https://media.brand.dev/39f0595e-816d-4998-907f-596ca99bed84.jpg",
   "logo": {
-    "light": "/logo/light.svg",
-    "dark": "/logo/dark.svg"
+    "light": "https://media.brand.dev/577b009f-d236-42c8-ab11-15ccebfcb69a.svg",
+    "dark": "https://media.brand.dev/577b009f-d236-42c8-ab11-15ccebfcb69a.svg"
   },
   "navbar": {
-    "links": [
-      {
-        "label": "Support",
-        "href": "mailto:hi@mintlify.com"
-      }
-    ],
     "primary": {
-      "type": "button",
-      "label": "Dashboard",
-      "href": "https://app.mintlify.com"
+      "type": "github",
+      "href": "https://github.com/tabsdata/tabsdata"
     }
-  },
-  "contextual": {
-    "options": [
-      "copy",
-      "view",
-      "chatgpt",
-      "claude",
-      "perplexity",
-      "mcp",
-      "cursor",
-      "vscode"
-    ]
   },
   "footer": {
     "socials": {
-      "x": "https://x.com/mintlify",
-      "github": "https://github.com/mintlify",
-      "linkedin": "https://linkedin.com/company/mintlify"
+      "github": "https://github.com/tabsdata/tabsdata"
     }
+  },
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "installation"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/overview",
+              "concepts/collections",
+              "concepts/functions",
+              "concepts/tableframe"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/publishing-data",
+              "guides/transforming-data",
+              "guides/subscribing-data",
+              "guides/scheduling",
+              "guides/secrets"
+            ]
+          },
+          {
+            "group": "Connectors",
+            "pages": [
+              "connectors/overview",
+              "connectors/file-storage",
+              "connectors/databases",
+              "connectors/cloud-warehouses",
+              "connectors/streaming",
+              "connectors/custom-plugins"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "CLI Reference",
+        "groups": [
+          {
+            "group": "Overview",
+            "pages": [
+              "cli/overview"
+            ]
+          },
+          {
+            "group": "Commands",
+            "pages": [
+              "cli/auth",
+              "cli/collection",
+              "cli/fn",
+              "cli/table",
+              "cli/user",
+              "cli/server"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Python SDK",
+            "pages": [
+              "api/decorators",
+              "api/tableframe",
+              "api/inputs",
+              "api/outputs",
+              "api/credentials",
+              "api/secrets",
+              "api/triggers"
+            ]
+          }
+        ]
+      }
+    ]
   }
 }

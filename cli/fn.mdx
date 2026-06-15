@@ -1,0 +1,249 @@
+---
+title: "td fn: register and manage Tabsdata functions"
+sidebarTitle: "fn"
+description: "Register, update, trigger, enable, disable, and delete Tabsdata functions — the units of data transformation and publication."
+---
+
+Functions are the core compute unit in Tabsdata. A function is a Python callable decorated with a Tabsdata decorator (`@publisher`, `@transformer`, or `@subscriber`) that reads from and/or writes to tables. The `td fn` command group lets you bundle and upload functions to the server, update them in place, trigger them manually, and control whether they run automatically on new data.
+
+<Tip>
+Once you run `td collection pin --name <coll>`, all `td fn` subcommands that accept `--coll` will use the pinned collection as the default, so you can omit `--coll` for the rest of your shell session. See [td collection](/cli/collection) for details.
+</Tip>
+
+## Subcommands
+
+### `td fn register`
+
+Bundle a Python function file and upload it to the server. The `--path` flag uses the form `/path/to/file.py::function_name` to identify both the file and the specific function within it.
+
+```bash
+td fn register --coll <coll> --path <file>::<function> [options]
+```
+
+**Flags**
+
+| Flag | Short | Required | Description |
+|------|-------|----------|-------------|
+| `--coll` | `-c` | Yes* | Collection to register the function into. Uses pinned collection if omitted. |
+| `--path` | | Yes* | Path to the function file in the form `/path/to/file.py::function_name`. |
+| `--description` | | No | Human-readable description for the function. |
+| `--dir-to-bundle` | | No | Directory to include in the execution bundle. Defaults to the folder containing the function file. |
+| `--requirements` | | No | Path to a requirements file. Auto-generated from the current Python environment if omitted. |
+| `--local-pkg` | | No | Path to a local package to include in the bundle. Can be repeated for multiple packages. |
+| `--reuse-tables` | | No | Flag. If set, existing tables that this function would recreate are reused (their history is preserved). |
+| `--enabled` / `--disabled` | | No | Register the function in an enabled or disabled state. Defaults to `--enabled`. |
+| `--update` | | No | Flag. If the function already exists, update it instead of failing. |
+
+**Example**
+
+```bash
+# Register a publisher function
+td fn register \
+  --coll analytics \
+  --path ./src/publishers.py::load_sales \
+  --description "Loads daily sales data" \
+  --requirements ./requirements.txt
+```
+
+```bash
+# Register with a local package and a custom bundle directory
+td fn register \
+  --coll analytics \
+  --path ./src/publishers.py::load_sales \
+  --dir-to-bundle ./src \
+  --local-pkg ./libs/myutils
+```
+
+---
+
+### `td fn update`
+
+Update an existing function. The function must already be registered. Accepts the same bundling options as `register`.
+
+```bash
+td fn update --coll <coll> --name <name> --path <file>::<function> [options]
+```
+
+**Flags**
+
+| Flag | Short | Required | Description |
+|------|-------|----------|-------------|
+| `--name` | `-n` | Yes* | Name of the function to update. |
+| `--coll` | `-c` | Yes* | Collection the function belongs to. |
+| `--path` | | Yes* | New function file path in the form `/path/to/file.py::function_name`. |
+| `--description` | | No | New description. |
+| `--dir-to-bundle` | | No | Directory to bundle for execution. |
+| `--requirements` | | No | Path to a requirements file. |
+| `--local-pkg` | | No | Path to local packages. Repeatable. |
+| `--reuse-tables` | | No | Flag. Reuse existing orphaned tables instead of recreating them. |
+| `--enabled` / `--disabled` | | No | Enable or disable the function after update. |
+
+**Example**
+
+```bash
+td fn update \
+  --coll analytics \
+  --name load_sales \
+  --path ./src/publishers_v2.py::load_sales
+```
+
+---
+
+### `td fn delete`
+
+Delete a function. Requires explicit confirmation.
+
+```bash
+td fn delete --coll <coll> --name <name> --confirm delete
+```
+
+**Flags**
+
+| Flag | Short | Required | Description |
+|------|-------|----------|-------------|
+| `--name` | `-n` | Yes* | Name of the function to delete. |
+| `--coll` | `-c` | Yes* | Collection the function belongs to. |
+| `--confirm` | | Yes* | Must be the literal string `delete`. Prompted if omitted. |
+
+**Example**
+
+```bash
+td fn delete --coll analytics --name load_sales --confirm delete
+```
+
+---
+
+### `td fn info`
+
+Display details of a function, including its ID, description, dependencies, triggers, and output tables. Pass `--show-history` to see all historical versions of the function.
+
+```bash
+td fn info --coll <coll> --name <name> [--show-history]
+```
+
+**Flags**
+
+| Flag | Short | Required | Description |
+|------|-------|----------|-------------|
+| `--name` | `-n` | Yes* | Name of the function to inspect. |
+| `--coll` | `-c` | Yes* | Collection the function belongs to. |
+| `--show-history` | | No | Flag. Show all historical versions of the function, newest first. |
+
+**Example**
+
+```bash
+# Current version
+td fn info --coll analytics --name load_sales
+
+# Full version history
+td fn info --coll analytics --name load_sales --show-history
+```
+
+---
+
+### `td fn list`
+
+List all functions in a collection.
+
+```bash
+td fn list --coll <coll>
+```
+
+**Flags**
+
+| Flag | Short | Required | Description |
+|------|-------|----------|-------------|
+| `--coll` | `-c` | Yes* | Collection whose functions are listed. |
+
+Prints a table with columns: **Name**, **Type**, **Description**, **Defined on**, **Defined by**.
+
+**Example**
+
+```bash
+td fn list --coll analytics
+```
+
+---
+
+### `td fn trigger`
+
+Manually trigger a function, creating a new execution plan. By default the CLI monitors the plan in real time until it finishes. Use `--detach` to return immediately.
+
+```bash
+td fn trigger --coll <coll> --name <name> [--plan-name <name>] [--detach]
+```
+
+**Flags**
+
+| Flag | Short | Required | Description |
+|------|-------|----------|-------------|
+| `--name` | `-n` | Yes* | Name of the function to trigger. |
+| `--coll` | `-c` | Yes* | Collection the function belongs to. |
+| `--plan-name` | | No | Custom name for the generated execution plan. |
+| `--detach` | `-d` | No | Flag. Return immediately without monitoring the plan. |
+
+**Example**
+
+```bash
+# Trigger and watch progress
+td fn trigger --coll analytics --name load_sales
+
+# Trigger and return immediately
+td fn trigger --coll analytics --name load_sales --detach
+
+# Trigger with a named plan
+td fn trigger --coll analytics --name load_sales --plan-name "manual-run-2024-01"
+```
+
+After triggering with `--detach`, check progress with:
+
+```bash
+td exe info --plan <plan-id>
+td exe monitor --plan <plan-id>
+```
+
+---
+
+### `td fn enable`
+
+Enable a previously disabled function so it responds to triggers automatically.
+
+```bash
+td fn enable --coll <coll> --name <name>
+```
+
+**Flags**
+
+| Flag | Short | Required | Description |
+|------|-------|----------|-------------|
+| `--name` | `-n` | Yes* | Name of the function to enable. |
+| `--coll` | `-c` | Yes* | Collection the function belongs to. |
+
+**Example**
+
+```bash
+td fn enable --coll analytics --name load_sales
+```
+
+---
+
+### `td fn disable`
+
+Disable a function so it does not respond to triggers automatically. The function remains registered and can be re-enabled at any time.
+
+```bash
+td fn disable --coll <coll> --name <name>
+```
+
+**Flags**
+
+| Flag | Short | Required | Description |
+|------|-------|----------|-------------|
+| `--name` | `-n` | Yes* | Name of the function to disable. |
+| `--coll` | `-c` | Yes* | Collection the function belongs to. |
+
+**Example**
+
+```bash
+td fn disable --coll analytics --name load_sales
+```

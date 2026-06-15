@@ -1,0 +1,181 @@
+---
+title: "Transform tables with Tabsdata transformer functions"
+sidebarTitle: "Transforming"
+description: "Write transformer functions that subscribe to Tabsdata tables, apply any Python or Polars logic, and publish results back as new or updated tables."
+---
+
+Transformers sit in the middle of the Tabsdata data graph. They read one or more existing tables from a collection, apply arbitrary logic — filters, joins, aggregations, enrichment — and write the results back as new Tabsdata tables. Because transformers declare their inputs and outputs explicitly in the `@td.transformer` decorator, Tabsdata can re-run them automatically whenever upstream data changes, keeping all derived tables fresh without any orchestration code.
+
+## The `@td.transformer` decorator
+
+```python
+@td.transformer(
+    input_tables,
+    output_tables,
+    name=None,
+    trigger_by=ALL_DEPS,
+    on_output_tables=None,
+)
+```
+
+<ParamField path="input_tables" type="str | list[str]" required>
+  The Tabsdata table name(s) to subscribe to. Each name maps positionally to a function parameter of type `td.TableFrame`.
+</ParamField>
+
+<ParamField path="output_tables" type="str | list[str]" required>
+  The Tabsdata table name(s) to write the results into. Each name maps positionally to one return value from the function. Pass a list when the function returns a tuple of frames.
+</ParamField>
+
+<ParamField path="name" type="str" default="function name">
+  An optional override for the registered function name. When omitted, Tabsdata uses the Python function name.
+</ParamField>
+
+<ParamField path="trigger_by" type="ALL_DEPS | list[str] | CronTrigger | None" default="ALL_DEPS">
+  Controls what causes the transformer to run:
+
+  - `ALL_DEPS` (default `"*"`) — run whenever **any** upstream `input_tables` table is updated.
+  - A list of table names — run only when one of those specific tables is updated.
+  - A `CronTrigger` — run on a cron schedule regardless of upstream changes.
+  - `None` — never run automatically; only triggered manually via `td fn trigger`.
+</ParamField>
+
+<ParamField path="on_output_tables" type="OnTablesSpec" default="None">
+  Optional table-level actions to perform on output tables after the function executes.
+</ParamField>
+
+## Trigger modes
+
+```python
+import tabsdata as td
+
+# Run whenever any input table updates (default)
+@td.transformer(input_tables="persons", output_tables="summary", trigger_by=td.ALL_DEPS)
+def summarise(persons: td.TableFrame) -> td.TableFrame: ...
+
+# Run only when the "orders" table updates, even though "products" is also an input
+@td.transformer(
+    input_tables=["orders", "products"],
+    output_tables="order_lines",
+    trigger_by=["orders"],
+)
+def enrich(orders: td.TableFrame, products: td.TableFrame) -> td.TableFrame: ...
+
+# Run on a schedule, independent of upstream changes
+@td.transformer(
+    input_tables="raw_events",
+    output_tables="daily_rollup",
+    trigger_by=td.CronTrigger("0 0 * * *"),
+)
+def rollup(events: td.TableFrame) -> td.TableFrame: ...
+
+# Never run automatically — only via td fn trigger
+@td.transformer(input_tables="staging", output_tables="curated", trigger_by=None)
+def curate(staging: td.TableFrame) -> td.TableFrame: ...
+```
+
+## Examples
+
+### Split one table into multiple output tables
+
+The transformer from example-000 reads the `persons` table, selects a subset of columns, and then fans the data out into three nationality-specific tables — `spanish`, `french`, and `german`. The function returns a tuple of frames; Tabsdata maps each frame positionally to the corresponding entry in `output_tables`.
+
+```python
+import tabsdata as td
+
+
+@td.transformer(
+    input_tables="persons",
+    output_tables=["spanish", "french", "german"],
+)
+def tfr(persons: td.TableFrame) -> (td.TableFrame, td.TableFrame, td.TableFrame):
+    persons = persons.select([
+        "identifier",
+        "name",
+        "surname",
+        "nationality",
+        "language",
+    ])
+    res = {}
+    for nationality in ["Spanish", "French", "German"]:
+        res[nationality] = persons.filter(
+            td.col("nationality").eq(nationality)
+        ).drop("nationality")
+    return res["Spanish"], res["French"], res["German"]
+```
+
+### Join two tables together
+
+Transformers can read multiple input tables, each arriving as its own `td.TableFrame` parameter. Here, `orders` and `customers` are joined on `customer_id` to produce a single enriched output.
+
+```python
+import tabsdata as td
+
+
+@td.transformer(
+    input_tables=["orders", "customers"],
+    output_tables="enriched_orders",
+    trigger_by=["orders"],   # only re-run when orders changes
+)
+def enrich_orders(
+    orders: td.TableFrame,
+    customers: td.TableFrame,
+) -> td.TableFrame:
+    return orders.join(customers, on="customer_id", how="left")
+```
+
+<Tip>
+  `trigger_by=["orders"]` means the transformer re-runs when `orders` updates, even if `customers` hasn't changed. The latest snapshot of `customers` is still passed in — only the trigger list governs *when* to run.
+</Tip>
+
+### Write results to an external destination
+
+Transformers are not limited to writing back to Tabsdata tables. Pass a file or SQL destination class as `output_tables` to have the transformer export its results directly to an external system.
+
+```python
+import tabsdata as td
+
+
+@td.transformer(
+    input_tables="enriched_orders",
+    output_tables=td.S3Destination(
+        uri="s3://my-bucket/exports/enriched_orders.parquet",
+        credentials=td.S3AccessKeyCredentials(
+            aws_access_key_id=td.EnvironmentSecret("AWS_ACCESS_KEY_ID"),
+            aws_secret_access_key=td.EnvironmentSecret("AWS_SECRET_ACCESS_KEY"),
+        ),
+    ),
+)
+def export_orders(enriched: td.TableFrame) -> td.TableFrame:
+    return enriched
+```
+
+## Multiple output frames
+
+When a transformer function returns a tuple, each element is written to the corresponding entry in `output_tables` by position. The number of return values must match the length of `output_tables`.
+
+```python
+@td.transformer(
+    input_tables="transactions",
+    output_tables=["approved", "declined", "pending"],
+)
+def route(txns: td.TableFrame) -> (td.TableFrame, td.TableFrame, td.TableFrame):
+    approved = txns.filter(td.col("status").eq("approved"))
+    declined = txns.filter(td.col("status").eq("declined"))
+    pending  = txns.filter(td.col("status").eq("pending"))
+    return approved, declined, pending
+```
+
+<CardGroup cols={2}>
+  <Card title="Publishing Data" icon="upload" href="guides/publishing-data">
+    Learn how to bring external data into Tabsdata tables using publisher functions.
+  </Card>
+  <Card title="Subscribing Data" icon="download" href="guides/subscribing-data">
+    Export transformed tables to files or databases using subscriber functions.
+  </Card>
+  <Card title="Scheduling" icon="clock" href="guides/scheduling">
+    Trigger transformers on a cron schedule or on specific upstream changes.
+  </Card>
+  <Card title="TableFrame API" icon="table" href="api/tableframe">
+    Explore all available TableFrame operations for filtering, joining, and aggregating data.
+  </Card>
+</CardGroup>

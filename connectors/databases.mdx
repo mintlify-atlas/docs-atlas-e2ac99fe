@@ -1,0 +1,365 @@
+---
+title: "SQL database connectors for Tabsdata"
+sidebarTitle: "Databases"
+description: "Connect Tabsdata to MySQL, MariaDB, PostgreSQL, Oracle, SQL Server, and more — including Change Data Capture triggers."
+---
+
+SQL database connectors let you pull rows from a relational database into a Tabsdata collection (source/publisher) or push processed TableFrame data back into a database table (destination/subscriber). Each connector accepts a standard connection URI and optional `UserPasswordCredentials`, keeping your secrets out of source code.
+
+## Supported databases
+
+| Database | Source class | Destination class | CDC trigger |
+|---|---|---|---|
+| MySQL | `MySQLSource` | `MySQLDestination` | `MySQLCdcTrigger` |
+| MariaDB | `MariaDBSource` | `MariaDBDestination` | — |
+| PostgreSQL | `PostgresSource` | `PostgresDestination` | `PostgresCdcTrigger` |
+| Oracle | `OracleSource` | `OracleDestination` | — |
+| Microsoft SQL Server | `MSSQLSource` | `MSSQLDestination` | — |
+| IBM Db2 | — | — | `Db2CdcTrigger` |
+| ClickHouse | (via generic URI) | — | — |
+
+## Credentials
+
+All SQL connectors use `UserPasswordCredentials`:
+
+```python
+from tabsdata import UserPasswordCredentials, EnvironmentSecret
+
+creds = UserPasswordCredentials(
+    user=EnvironmentSecret("DB_USER"),
+    password=EnvironmentSecret("DB_PASSWORD"),
+)
+```
+
+<Note>
+Store credentials using `EnvironmentSecret` or another secret backend rather than hard-coded strings. See [Secrets](/guides/secrets).
+</Note>
+
+---
+
+## MySQL
+
+### `MySQLSource`
+
+```python
+MySQLSource(
+    uri: str,
+    query: str | list[str],
+    credentials: UserPasswordCredentials | None = None,
+    initial_values: dict | None = None,
+)
+```
+
+<ParamField path="uri" type="str" required>
+  MySQL connection URI, e.g. `mysql://host:3306/mydb`.
+</ParamField>
+
+<ParamField path="query" type="str | list[str]" required>
+  SQL query or list of queries. Multiple queries map to multiple positional arguments in the publisher function. Queries can contain `:param` placeholders replaced from `initial_values`.
+</ParamField>
+
+<ParamField path="credentials" type="UserPasswordCredentials">
+  Username and password credentials.
+</ParamField>
+
+<ParamField path="initial_values" type="dict">
+  Initial substitution values for `:param` placeholders. Values are updated between runs to support incremental ingestion.
+</ParamField>
+
+### `MySQLDestination`
+
+```python
+MySQLDestination(
+    uri: str,
+    destination_table: str | list[str],
+    credentials: UserPasswordCredentials = None,
+    if_table_exists: "append" | "replace" = "append",
+)
+```
+
+<ParamField path="destination_table" type="str | list[str]" required>
+  Target table name(s). The number of tables must match the number of TableFrames returned by the subscriber function.
+</ParamField>
+
+<ParamField path="if_table_exists" type='"append" | "replace"'>
+  `"append"` adds rows to an existing table; `"replace"` truncates and rewrites it.
+</ParamField>
+
+**Publisher example — MySQL with incremental load:**
+
+```python
+import tabsdata as td
+from tabsdata import MySQLSource, UserPasswordCredentials, EnvironmentSecret
+
+creds = UserPasswordCredentials(
+    user=EnvironmentSecret("MYSQL_USER"),
+    password=EnvironmentSecret("MYSQL_PASSWORD"),
+)
+
+@td.publisher(
+    source=MySQLSource(
+        uri="mysql://db.example.com:3306/sales",
+        query="SELECT * FROM orders WHERE updated_at > :last_run",
+        credentials=creds,
+        initial_values={"last_run": "1970-01-01 00:00:00"},
+    ),
+    tables="myorg/sales/orders",
+)
+def ingest_orders(orders: td.TableFrame) -> td.TableFrame:
+    return orders
+```
+
+---
+
+## MariaDB
+
+### `MariaDBSource`
+
+```python
+MariaDBSource(
+    uri: str,                             # mariadb://host:3306/mydb
+    query: str | list[str],
+    credentials: UserPasswordCredentials | None = None,
+    initial_values: dict | None = None,
+)
+```
+
+### `MariaDBDestination`
+
+```python
+MariaDBDestination(
+    uri: str,
+    destination_table: str | list[str],
+    credentials: UserPasswordCredentials = None,
+    if_table_exists: "append" | "replace" = "append",
+)
+```
+
+---
+
+## PostgreSQL
+
+### `PostgresSource`
+
+```python
+PostgresSource(
+    uri: str,                             # postgresql://host:5432/mydb
+    query: str | list[str],
+    credentials: UserPasswordCredentials | None = None,
+    initial_values: dict | None = None,
+)
+```
+
+### `PostgresDestination`
+
+```python
+PostgresDestination(
+    uri: str,
+    destination_table: str | list[str],
+    credentials: UserPasswordCredentials = None,
+    if_table_exists: "append" | "replace" = "append",
+)
+```
+
+**Subscriber example — PostgreSQL:**
+
+```python
+import tabsdata as td
+from tabsdata import PostgresDestination, UserPasswordCredentials, EnvironmentSecret
+
+creds = UserPasswordCredentials(
+    user=EnvironmentSecret("PG_USER"),
+    password=EnvironmentSecret("PG_PASSWORD"),
+)
+
+@td.subscriber(
+    tables="myorg/sales/orders",
+    destination=PostgresDestination(
+        uri="postgresql://pg.example.com:5432/analytics",
+        destination_table="public.orders_summary",
+        credentials=creds,
+        if_table_exists="append",
+    ),
+)
+def export_orders(orders: td.TableFrame) -> td.TableFrame:
+    return orders.select(["order_id", "total", "created_at"])
+```
+
+---
+
+## Oracle
+
+### `OracleSource`
+
+```python
+OracleSource(
+    uri: str,                             # oracle://host:1521/service
+    query: str | list[str],
+    credentials: UserPasswordCredentials | None = None,
+    initial_values: dict | None = None,
+)
+```
+
+### `OracleDestination`
+
+```python
+OracleDestination(
+    uri: str,
+    destination_table: str | list[str],
+    credentials: UserPasswordCredentials = None,
+    if_table_exists: "append" | "replace" = "append",
+)
+```
+
+---
+
+## Microsoft SQL Server
+
+`MSSQLSource` and `MSSQLDestination` are provided by the optional `tabsdata-mssql` package and use an ODBC connection string.
+
+### `MSSQLSource`
+
+```python
+MSSQLSource(
+    connection_string: str,
+    query: str | list[str],
+    chunk_size: int = 50000,
+    credentials: dict | UserPasswordCredentials | None = None,
+    server: str | Secret = None,
+    database: str | Secret = None,
+    driver: str | Secret = None,
+    initial_values: dict | None = None,
+)
+```
+
+<ParamField path="connection_string" type="str" required>
+  ODBC connection string, e.g. `Driver={ODBC Driver 18 for SQL Server};Server=myhost;Database=mydb;`.
+</ParamField>
+
+<ParamField path="chunk_size" type="int">
+  Number of rows to fetch per chunk. Defaults to `50000`.
+</ParamField>
+
+### `MSSQLDestination`
+
+```python
+MSSQLDestination(
+    connection_string: str,
+    destination_table: str | list[str],
+    credentials: dict | UserPasswordCredentials | None = None,
+    if_table_exists: "append" | "replace" = "append",
+)
+```
+
+<Note>
+`MSSQLSource` and `MSSQLDestination` require a compatible ODBC driver installed on the server that runs the function. Install the [Microsoft ODBC Driver for SQL Server](https://learn.microsoft.com/en-us/sql/connect/odbc/download-odbc-driver-for-sql-server) and add `pyodbc` to your function's requirements.
+</Note>
+
+---
+
+## Change Data Capture (CDC)
+
+CDC connectors capture row-level changes (inserts, updates, deletes) directly from the database's replication log, enabling real-time ingestion without polling.
+
+<Warning>
+CDC classes are currently marked **unstable** and their APIs may change in future releases.
+</Warning>
+
+### MySQL CDC
+
+`MySQLCdcConn` holds the connection configuration; `MySQLCdcTrigger` is used as the `trigger` parameter of a `@publisher`.
+
+```python
+from tabsdata.connector.cdc.mysql import MySQLCdcConn, MySQLCdcTrigger
+from tabsdata import UserPasswordCredentials
+
+conn = MySQLCdcConn(
+    uri="mysql://db.example.com:3306/mydb",
+    credentials=UserPasswordCredentials(
+        user=EnvironmentSecret("DB_USER"),
+        password=EnvironmentSecret("DB_PASSWORD"),
+    ),
+)
+
+trigger = MySQLCdcTrigger(
+    conn=conn,
+    tables=["mydb.orders", "mydb.customers"],
+    start_from="earliest",           # or a GTID / binlog position
+    server_id=512,
+    time_rollover_secs=60,
+)
+```
+
+**`MySQLCdcTrigger` constructor:**
+
+```python
+MySQLCdcTrigger(
+    conn: MySQLCdcConn,
+    tables: QualifiedTablesSpec,
+    start_from: MySQLCdcStartFromSpec,
+    cdc_format: CdcFormat = CdcFormat(),
+    buffer_max_rows: int = ...,
+    buffer_max_bytes: int | None = ...,
+    buffer_max_secs: int = ...,
+    trigger_max_rows: int | None = ...,
+    trigger_max_bytes: int | None = ...,
+    trigger_max_secs: int = ...,
+    poll_interval_seconds: int = ...,
+    blocking_timeout_seconds: int = ...,
+    server_id: int = 512,
+    start: datetime | None = None,
+    end: datetime | None = None,
+)
+```
+
+### PostgreSQL CDC
+
+```python
+from tabsdata.connector.cdc.postgres import PostgresCdcConn, PostgresCdcTrigger
+
+conn = PostgresCdcConn(
+    uri="postgresql://pg.example.com:5432/mydb",
+    credentials=UserPasswordCredentials(...),
+)
+
+trigger = PostgresCdcTrigger(
+    conn=conn,
+    tables=["public.orders"],
+    start_from="earliest",           # or an LSN string
+    replication_slot="tabsdata_slot",
+    publication_name="tabsdata_pub",
+    slot_behavior="reuse",
+)
+```
+
+**`PostgresCdcTrigger` constructor:**
+
+```python
+PostgresCdcTrigger(
+    conn: PostgresCdcConn,
+    tables: QualifiedTablesSpec,
+    start_from: PostgresCdcStartFromSpec,
+    cdc_format: CdcFormat = CdcFormat(),
+    buffer_max_rows: int = ...,
+    buffer_max_bytes: int | None = ...,
+    buffer_max_secs: int = ...,
+    trigger_max_rows: int | None = ...,
+    trigger_max_bytes: int | None = ...,
+    trigger_max_secs: int = ...,
+    poll_interval_seconds: int = ...,
+    blocking_timeout_seconds: int = ...,
+    replication_slot: str | None = None,
+    publication_name: str | None = None,
+    slot_behavior: "reuse" | "create" = "reuse",
+    start: datetime | None = None,
+    end: datetime | None = None,
+)
+```
+
+### IBM Db2 CDC
+
+```python
+from tabsdata.connector.cdc.db2 import Db2CdcConn, Db2CdcTrigger
+```
+
+`Db2CdcConn` and `Db2CdcTrigger` follow the same pattern as their MySQL and PostgreSQL counterparts. Install the `tabsdata-cdc-db2` optional package.

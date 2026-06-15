@@ -1,0 +1,189 @@
+---
+title: "Schedule Tabsdata functions with cron triggers"
+sidebarTitle: "Scheduling"
+description: "Control when publisher, transformer, and subscriber functions run using dependency triggers, cron expressions, or manual invocation."
+---
+
+Every Tabsdata function — publisher, transformer, or subscriber — has a `trigger_by` parameter that determines what causes it to execute. You can wire functions to run automatically whenever upstream data changes, on a fixed cron schedule, on a subset of their declared dependencies, or not at all until you explicitly call them. Choosing the right trigger mode is the primary tool for balancing freshness, cost, and coupling in your data pipeline.
+
+## Trigger modes
+
+### 1 — Dependency-triggered (default)
+
+When `trigger_by` is set to `ALL_DEPS` (the string `"*"`), the function runs every time **any** of its declared input tables is updated. This is the default for transformers and subscribers — it gives you the most reactive pipeline with the least configuration.
+
+```python
+import tabsdata as td
+
+# Runs whenever the "persons" table changes
+@td.transformer(
+    input_tables="persons",
+    output_tables=["spanish", "french", "german"],
+    trigger_by=td.ALL_DEPS,  # this is the default; you can omit it
+)
+def split_by_nationality(persons: td.TableFrame) -> (td.TableFrame, td.TableFrame, td.TableFrame):
+    ...
+```
+
+### 2 — Table-specific trigger
+
+Pass a list of table names to `trigger_by` to run the function only when one of those specific tables is updated, even if the function reads additional tables. The other input tables are still passed in — they just don't act as triggers.
+
+```python
+import tabsdata as td
+
+# Only re-runs when "orders" changes; "products" is an input but not a trigger
+@td.transformer(
+    input_tables=["orders", "products"],
+    output_tables="order_lines",
+    trigger_by=["orders"],
+)
+def enrich_orders(
+    orders: td.TableFrame,
+    products: td.TableFrame,
+) -> td.TableFrame:
+    return orders.join(products, on="product_id", how="left")
+```
+
+<Tip>
+  Use table-specific triggers to prevent expensive joins from re-running whenever a slowly-changing reference table is updated.
+</Tip>
+
+### 3 — Cron trigger
+
+Pass a `CronTrigger` to run the function on a time-based schedule, regardless of whether any upstream data has changed. This is the only trigger mode available for publishers (since publishers have no Tabsdata input tables to watch).
+
+```python
+import tabsdata as td
+
+# Runs every day at 09:00 UTC
+@td.publisher(
+    source=td.S3Source(
+        uri="s3://my-bucket/daily/*.parquet",
+        credentials=td.S3AccessKeyCredentials(
+            aws_access_key_id=td.EnvironmentSecret("AWS_ACCESS_KEY_ID"),
+            aws_secret_access_key=td.EnvironmentSecret("AWS_SECRET_ACCESS_KEY"),
+        ),
+    ),
+    tables="daily_snapshot",
+    trigger_by=td.CronTrigger("0 9 * * *"),
+)
+def ingest_daily(snapshot: td.TableFrame) -> td.TableFrame:
+    return snapshot
+```
+
+### 4 — Manual only
+
+Set `trigger_by=None` to disable all automatic triggers. The function only runs when you explicitly invoke it via the CLI or API. This is useful for one-off backfills, migrations, or debugging.
+
+```python
+import tabsdata as td
+
+@td.transformer(
+    input_tables="raw",
+    output_tables="curated",
+    trigger_by=None,  # never runs automatically
+)
+def manual_curate(raw: td.TableFrame) -> td.TableFrame:
+    return raw.drop_nulls()
+```
+
+## The `CronTrigger` class
+
+`CronTrigger` wraps a standard 5-field cron expression and adds optional time boundaries.
+
+```python
+class CronTrigger:
+    def __init__(
+        self,
+        mask: str,                   # 5-field cron expression (required)
+        start: datetime | None = None,  # earliest time the trigger may fire
+        end: datetime | None = None,    # latest time the trigger may fire
+    ): ...
+```
+
+<ParamField path="mask" type="str" required>
+  A standard 5-field cron expression: `minute hour day-of-month month day-of-week`.
+
+  | Field | Range | Special characters |
+  |-------|-------|--------------------|
+  | minute | 0–59 | `*` `,` `-` `/` |
+  | hour | 0–23 | `*` `,` `-` `/` |
+  | day of month | 1–31 | `*` `,` `-` `/` |
+  | month | 1–12 | `*` `,` `-` `/` |
+  | day of week | 0–6 (Sun=0) | `*` `,` `-` `/` |
+
+  Predefined aliases such as `@daily` are **not** supported.
+</ParamField>
+
+<ParamField path="start" type="datetime | None" default="None">
+  A timezone-aware `datetime` after which the trigger becomes active. Useful for scheduling a function to start at a specific point in the future.
+</ParamField>
+
+<ParamField path="end" type="datetime | None" default="None">
+  A timezone-aware `datetime` after which the trigger stops firing. Both `start` and `end` accept ISO 8601 strings in addition to `datetime` objects.
+</ParamField>
+
+### Common cron expressions
+
+```python
+import tabsdata as td
+from datetime import datetime, timezone
+
+# Every 15 minutes
+td.CronTrigger("*/15 * * * *")
+
+# Every day at midnight UTC
+td.CronTrigger("0 0 * * *")
+
+# Every Monday at 08:30 UTC
+td.CronTrigger("30 8 * * 1")
+
+# First day of every month at 06:00 UTC
+td.CronTrigger("0 6 1 * *")
+
+# Weekdays at 09:00 UTC, within a date range
+td.CronTrigger(
+    "0 9 * * 1-5",
+    start=datetime(2025, 1, 1, tzinfo=timezone.utc),
+    end=datetime(2025, 12, 31, 23, 59, tzinfo=timezone.utc),
+)
+```
+
+## Triggering manually from the CLI
+
+Any function — regardless of its `trigger_by` setting — can be run on demand:
+
+```bash
+td fn trigger --coll <collection-name> --name <function-name>
+```
+
+For example, to trigger the `ingest_daily` publisher in the `analytics` collection:
+
+```bash
+td fn trigger --coll analytics --name ingest_daily
+```
+
+## Summary
+
+| `trigger_by` value | When does the function run? |
+|--------------------|-----------------------------|
+| `ALL_DEPS` (default) | Whenever any input table updates |
+| `["table_a", "table_b"]` | Whenever `table_a` or `table_b` updates |
+| `CronTrigger("0 9 * * *")` | At 09:00 UTC every day |
+| `None` | Only when triggered manually via CLI or API |
+
+<CardGroup cols={2}>
+  <Card title="Publishing Data" icon="upload" href="guides/publishing-data">
+    Publishers use `CronTrigger` or `None` — they cannot subscribe to tables.
+  </Card>
+  <Card title="Transforming Data" icon="arrows-rotate" href="guides/transforming-data">
+    Transformers default to `ALL_DEPS` and support all four trigger modes.
+  </Card>
+  <Card title="CLI: fn trigger" icon="terminal" href="cli/fn">
+    Full reference for the `td fn trigger` command and its options.
+  </Card>
+  <Card title="API: Triggers" icon="code" href="api/triggers">
+    Full API reference for `CronTrigger` and related types.
+  </Card>
+</CardGroup>

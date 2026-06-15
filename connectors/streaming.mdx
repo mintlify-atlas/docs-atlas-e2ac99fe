@@ -1,0 +1,250 @@
+---
+title: "Kafka streaming connector for Tabsdata"
+sidebarTitle: "Streaming"
+description: "Trigger Tabsdata publishers from Apache Kafka topics and deserialize Avro, JSON, or Protobuf messages into TableFrames."
+---
+
+The Kafka connector lets Tabsdata act as a streaming consumer. A `KafkaTrigger` is registered as the `trigger` parameter of a `@publisher` decorator; Tabsdata then continuously polls the configured Kafka topic, buffers incoming messages, and fires the publisher function whenever a rollover condition (time, size, or message count) is met.
+
+<Note>
+Kafka classes are currently marked **unstable** and their APIs may change in future releases. Install the optional package with `pip install tabsdata[kafka]` before use.
+</Note>
+
+---
+
+## Core classes
+
+### `KafkaConn` — connection configuration
+
+`KafkaConn` holds the Kafka bootstrap server list, authentication details, and optional schema registry configuration.
+
+```python
+from tabsdata.connector.kafka import KafkaConn
+
+KafkaConn(
+    servers: str | list[str],
+    credentials: KafkaCredentialsSpec,
+    group_id: str | None = None,
+    schema_registry: ConfluentSchemaRegistry | AwsGlueSchemaRegistry | None = None,
+    enforce_connection_params: bool = True,
+    cx_src_configs: dict | None = None,
+)
+```
+
+<ParamField path="servers" type="str | list[str]" required>
+  Kafka bootstrap server address(es), e.g. `"broker:9092"` or `["broker1:9092", "broker2:9092"]`.
+</ParamField>
+
+<ParamField path="credentials" type="KafkaCredentialsSpec" required>
+  A `UserPasswordCredentials` instance used for SASL/SCRAM-SHA-256 authentication. Pass `None` if the broker does not require authentication (not recommended for production).
+</ParamField>
+
+<ParamField path="group_id" type="str">
+  Kafka consumer group ID used at the connection level. If also set on `KafkaTrigger`, the trigger value takes precedence when `enforce_connection_params` is `False`.
+</ParamField>
+
+<ParamField path="schema_registry" type="ConfluentSchemaRegistry | AwsGlueSchemaRegistry">
+  Optional schema registry for deserializing Avro, JSON, or Protobuf messages.
+</ParamField>
+
+<ParamField path="cx_src_configs" type="dict">
+  Additional raw `confluent_kafka.Consumer` configuration properties. These are merged with the base configuration built by the connector.
+</ParamField>
+
+---
+
+### `KafkaTrigger` — stage trigger
+
+`KafkaTrigger` consumes messages from a Kafka topic and stages them as tabular data for the publisher function. It implements rollover logic based on elapsed time, cumulative message size, or message count.
+
+```python
+from tabsdata.connector.kafka import KafkaTrigger
+
+KafkaTrigger(
+    conn: KafkaConn,
+    topic: str,
+    data_format: "avro" | "json" | "protobuf" | Protobuf,
+    schema: str,
+    group_id: str | None = None,
+    time_rollover_secs: int = 60,
+    size_rollover_mb: int | None = None,
+    messages_rollover: int | None = None,
+    dlq_topic: str | None = None,
+    start: datetime | None = None,
+    end: datetime | None = None,
+)
+```
+
+<ParamField path="conn" type="KafkaConn" required>
+  The Kafka connection configuration.
+</ParamField>
+
+<ParamField path="topic" type="str" required>
+  Name of the Kafka topic to consume from.
+</ParamField>
+
+<ParamField path="data_format" type="str | Protobuf" required>
+  Message serialization format. Use `"avro"`, `"json"`, or `"protobuf"` (or a `Protobuf` object for schema-less Protobuf with a specific message name).
+</ParamField>
+
+<ParamField path="schema" type="str" required>
+  Schema string for deserializing messages. For Avro this is the Avro schema JSON; for JSON this is the JSON Schema string; for Protobuf this is the `.proto` file content.
+</ParamField>
+
+<ParamField path="group_id" type="str">
+  Kafka consumer group ID at the trigger level. When `conn.enforce_connection_params` is `True`, the group ID from `KafkaConn` takes precedence.
+</ParamField>
+
+<ParamField path="time_rollover_secs" type="int">
+  Maximum seconds to buffer messages before staging them. Defaults to `60`.
+</ParamField>
+
+<ParamField path="size_rollover_mb" type="int">
+  Maximum cumulative buffer size in megabytes before a rollover is triggered.
+</ParamField>
+
+<ParamField path="messages_rollover" type="int">
+  Maximum number of messages to buffer before a rollover is triggered.
+</ParamField>
+
+<ParamField path="dlq_topic" type="str">
+  Dead-letter queue topic name. Messages that fail deserialization are forwarded here.
+</ParamField>
+
+<ParamField path="start" type="datetime">
+  Optional start time for the trigger. The trigger waits until this moment before consuming.
+</ParamField>
+
+<ParamField path="end" type="datetime">
+  Optional end time for the trigger. Consumption stops when this time is reached.
+</ParamField>
+
+---
+
+## Schema registries
+
+Schema registries allow the connector to resolve schemas centrally instead of embedding them in each message.
+
+### `ConfluentSchemaRegistry`
+
+```python
+from tabsdata.connector.kafka import ConfluentSchemaRegistry
+from tabsdata import UserPasswordCredentials
+
+ConfluentSchemaRegistry(
+    url: str,
+    credentials: ConfluentSchemaRegistryCredentialsSpec | None = None,
+    configs: dict | None = None,
+)
+```
+
+<ParamField path="url" type="str" required>
+  URL of the Confluent Schema Registry, e.g. `https://schema-registry.example.com`.
+</ParamField>
+
+<ParamField path="credentials" type="UserPasswordCredentials">
+  Basic-auth credentials for the registry. `ConfluentSchemaRegistryCredentialsSpec` is a type alias for `UserPasswordCredentials`.
+</ParamField>
+
+### `AwsGlueSchemaRegistry`
+
+```python
+from tabsdata.connector.kafka import AwsGlueSchemaRegistry
+from tabsdata import S3AccessKeyCredentials
+
+AwsGlueSchemaRegistry(
+    region_name: str,
+    credentials: AwsGlueSchemaRegistryCredentialsSpec,
+    registry_name: str,
+    schema_name: str,
+    configs: dict | None = None,
+)
+```
+
+<ParamField path="region_name" type="str" required>
+  AWS region where the Glue Schema Registry is located.
+</ParamField>
+
+<ParamField path="credentials" type="S3AccessKeyCredentials" required>
+  AWS access key credentials. `AwsGlueSchemaRegistryCredentialsSpec` is a type alias for `S3AccessKeyCredentials`.
+</ParamField>
+
+<ParamField path="registry_name" type="str" required>
+  Name of the AWS Glue Schema Registry.
+</ParamField>
+
+<ParamField path="schema_name" type="str" required>
+  Name of the schema within the registry.
+</ParamField>
+
+---
+
+## Credential type aliases
+
+| Type alias | Underlying class |
+|---|---|
+| `KafkaCredentialsSpec` | `UserPasswordCredentials` |
+| `ConfluentSchemaRegistryCredentialsSpec` | `UserPasswordCredentials` |
+| `AwsGlueSchemaRegistryCredentialsSpec` | `S3AccessKeyCredentials` |
+
+---
+
+## Complete example
+
+The example below ingests JSON messages from a Kafka topic secured with SASL/SCRAM and a Confluent Schema Registry.
+
+```python
+import tabsdata as td
+from tabsdata import UserPasswordCredentials, EnvironmentSecret
+from tabsdata.connector.kafka import (
+    KafkaConn,
+    KafkaTrigger,
+    ConfluentSchemaRegistry,
+)
+
+AVRO_SCHEMA = """
+{
+  "type": "record",
+  "name": "OrderEvent",
+  "fields": [
+    {"name": "order_id", "type": "string"},
+    {"name": "amount",   "type": "double"},
+    {"name": "created_at", "type": "long"}
+  ]
+}
+"""
+
+kafka_conn = KafkaConn(
+    servers=["kafka-broker.example.com:9092"],
+    credentials=UserPasswordCredentials(
+        user=EnvironmentSecret("KAFKA_USER"),
+        password=EnvironmentSecret("KAFKA_PASSWORD"),
+    ),
+    group_id="tabsdata-orders-consumer",
+    schema_registry=ConfluentSchemaRegistry(
+        url="https://schema-registry.example.com",
+        credentials=UserPasswordCredentials(
+            user=EnvironmentSecret("SR_USER"),
+            password=EnvironmentSecret("SR_PASSWORD"),
+        ),
+    ),
+)
+
+@td.publisher(
+    trigger=KafkaTrigger(
+        conn=kafka_conn,
+        topic="order-events",
+        data_format="avro",
+        schema=AVRO_SCHEMA,
+        time_rollover_secs=30,
+        size_rollover_mb=50,
+    ),
+    tables="myorg/orders/events",
+)
+def ingest_order_events(events: td.TableFrame) -> td.TableFrame:
+    return events
+```
+
+<Tip>
+Use `time_rollover_secs` as your primary rollover condition to ensure the publisher fires regularly even during low-traffic periods, and add `size_rollover_mb` or `messages_rollover` to cap memory usage during traffic spikes.
+</Tip>

@@ -1,0 +1,394 @@
+---
+title: "Output destination classes for Tabsdata subscribers"
+sidebarTitle: "Outputs"
+description: "Reference for output destination classes—file, SQL, and table outputs—used in the destination parameter of the @td.subscriber decorator."
+---
+
+Output destination classes tell the `@td.subscriber` decorator (and, via `TableOutput`, the `@td.transformer`) where to write data after a function runs. Every destination is a subclass of `DestinationPlugin`. Tabsdata ships with built-in support for local files, AWS S3, Azure Blob Storage, Google Cloud Storage, the AWS Glue catalog, and several SQL databases.
+
+<Note>
+All destination classes are importable directly from `tabsdata`: `import tabsdata as td; td.S3Destination(...)`.
+</Note>
+
+---
+
+## File destinations
+
+File destinations write `TableFrame` results to files in the local filesystem or cloud object storage. If `format` is omitted the format is inferred from the file extension in the path or URI.
+
+### `LocalFileDestination`
+
+Write data to the local filesystem. Useful for development and on-premise deployments.
+
+```python
+import tabsdata as td
+
+dest = td.LocalFileDestination(
+    path="/exports/sales_$EXPORT_TIMESTAMP.parquet",
+)
+```
+
+<ParamField path="path" type="str | list[str]" required>
+  Absolute path or list of paths where output files should be written. Use the
+  `$FRAGMENT_IDX` placeholder to support multiple output fragments, and
+  `$EXPORT_TIMESTAMP`, `$EXECUTION_ID`, or `$TRANSACTION_ID` for unique names
+  per run.
+</ParamField>
+
+<ParamField path="format" type="str | FileFormat" default="inferred from extension">
+  File format. Supported: `"csv"`, `"parquet"`, `"ndjson"`, `"avro"`.
+  See [Inputs: File formats](/api/inputs#file-formats) for format class details.
+</ParamField>
+
+---
+
+### `S3Destination`
+
+Write data to an Amazon S3 bucket, with optional AWS Glue catalog registration.
+
+```python
+dest = td.S3Destination(
+    uri="s3://my-bucket/exports/sales_$EXPORT_TIMESTAMP.parquet",
+    credentials=td.S3AccessKeyCredentials(
+        aws_access_key_id=td.EnvironmentSecret("AWS_KEY_ID"),
+        aws_secret_access_key=td.EnvironmentSecret("AWS_SECRET"),
+    ),
+    region="us-east-1",
+)
+```
+
+<ParamField path="uri" type="str | list[str]" required>
+  S3 URI(s) with the `s3://` scheme. Supports path placeholders
+  (`$EXPORT_TIMESTAMP`, `$EXECUTION_ID`, `$FRAGMENT_IDX`, etc.).
+</ParamField>
+
+<ParamField path="credentials" type="S3Credentials" required>
+  AWS credentials. Use `S3AccessKeyCredentials`. See [Credentials](/api/credentials).
+</ParamField>
+
+<ParamField path="format" type="str | FileFormat" default="inferred">
+  Supported formats: `"csv"`, `"parquet"`, `"ndjson"`, `"avro"`.
+</ParamField>
+
+<ParamField path="region" type="str" default="None">
+  AWS region of the target S3 bucket, e.g. `"eu-west-1"`.
+</ParamField>
+
+<ParamField path="catalog" type="AWSGlue | None" default="None">
+  Optional AWS Glue catalog integration. When provided, Tabsdata registers the
+  written Parquet file(s) with the Iceberg catalog. Requires Parquet format.
+  See [`AWSGlue`](#awsglue) below.
+</ParamField>
+
+---
+
+### `AzureDestination`
+
+Write data to Azure Blob Storage.
+
+```python
+dest = td.AzureDestination(
+    uri="az://my-container/exports/output.parquet",
+    credentials=td.AzureAccountKeyCredentials(
+        account_name=td.EnvironmentSecret("AZURE_ACCOUNT"),
+        account_key=td.EnvironmentSecret("AZURE_KEY"),
+    ),
+)
+```
+
+<ParamField path="uri" type="str | list[str]" required>
+  Azure Blob URI(s) using the `az://` scheme.
+</ParamField>
+
+<ParamField path="credentials" type="AzureCredentials" required>
+  Azure credentials. Use `AzureAccountKeyCredentials`. See [Credentials](/api/credentials).
+</ParamField>
+
+<ParamField path="format" type="str | FileFormat" default="inferred">
+  Supported formats: `"csv"`, `"parquet"`, `"ndjson"`, `"avro"`.
+</ParamField>
+
+---
+
+### `GCSDestination`
+
+Write data to Google Cloud Storage.
+
+```python
+dest = td.GCSDestination(
+    uri="gs://my-bucket/exports/output.parquet",
+    credentials=td.GCPServiceAccountKeyCredentials(
+        service_account_key=td.EnvironmentSecret("GCP_SERVICE_ACCOUNT_JSON"),
+    ),
+)
+```
+
+<ParamField path="uri" type="str | list[str]" required>
+  GCS URI(s) using the `gs://` scheme.
+</ParamField>
+
+<ParamField path="credentials" type="GCPCredentials" required>
+  GCP credentials. Use `GCPServiceAccountKeyCredentials`. See [Credentials](/api/credentials).
+</ParamField>
+
+<ParamField path="format" type="str | FileFormat" default="inferred">
+  Supported formats: `"csv"`, `"parquet"`, `"ndjson"`, `"avro"`.
+</ParamField>
+
+---
+
+### `AWSGlue`
+
+Catalog plugin for integrating S3 output with the AWS Glue / Apache Iceberg catalog. Pass an `AWSGlue` instance as the `catalog` parameter of `S3Destination`.
+
+```python
+catalog = td.AWSGlue(
+    definition={
+        "type": "glue",
+        "client.region": "us-east-1",
+    },
+    tables="my_namespace.my_table",
+    if_table_exists="append",
+    auto_create_at="s3://my-bucket/warehouse/my_table/",
+)
+
+dest = td.S3Destination(
+    uri="s3://my-bucket/warehouse/my_table/data.parquet",
+    credentials=td.S3AccessKeyCredentials(
+        aws_access_key_id=td.EnvironmentSecret("AWS_KEY_ID"),
+        aws_secret_access_key=td.EnvironmentSecret("AWS_SECRET"),
+    ),
+    format=td.ParquetFormat(),
+    catalog=catalog,
+)
+```
+
+<ParamField path="definition" type="dict" required>
+  PyIceberg catalog configuration dictionary. Keys follow the PyIceberg catalog
+  spec (e.g. `"type"`, `"client.region"`, `"warehouse"`).
+</ParamField>
+
+<ParamField path="tables" type="str | list[str]" required>
+  Iceberg table identifier(s) in `"namespace.table"` format. Must match the
+  number of output `TableFrame` objects.
+</ParamField>
+
+<ParamField path="if_table_exists" type='"append" | "replace"' default='"append"'>
+  What to do when the target Iceberg table already exists. `"append"` adds new
+  rows; `"replace"` deletes all existing rows first.
+</ParamField>
+
+<ParamField path="auto_create_at" type="str | list[str | None] | None" default="None">
+  S3 location(s) at which to auto-create the Iceberg table if it does not yet
+  exist. Pass `None` to require the table to exist already.
+</ParamField>
+
+<ParamField path="schema_strategy" type='"update" | "strict"' default='"update"'>
+  Schema evolution strategy when appending. `"update"` adds new columns;
+  `"strict"` fails if the incoming schema differs from the table schema.
+</ParamField>
+
+<ParamField path="s3_credentials" type="S3Credentials | None" default="None">
+  S3 credentials for catalog S3 access (if different from the `S3Destination`
+  credentials).
+</ParamField>
+
+<ParamField path="s3_region" type="str | None" default="None">
+  AWS region for the catalog's S3 access.
+</ParamField>
+
+---
+
+## SQL destinations
+
+SQL destinations write `TableFrame` results into relational database tables. Each destination class corresponds to a specific database engine.
+
+<Note>
+`MariaDBDestination`, `MySQLDestination`, and `PostgresDestination` are **deprecated** since version 1.6.0. Prefer the newer `MariaDBDest`, `MySQLDest`, and `PostgresDest` classes from the connector packages for new code.
+</Note>
+
+### `MySQLDestination` *(deprecated)*
+
+```python
+dest = td.MySQLDestination(
+    uri="mysql://my-db-host:3306/mydb",
+    destination_table="output_table",
+    credentials=td.UserPasswordCredentials(
+        user=td.EnvironmentSecret("DB_USER"),
+        password=td.EnvironmentSecret("DB_PASS"),
+    ),
+    if_table_exists="append",
+)
+```
+
+<ParamField path="uri" type="str" required>
+  MySQL connection URI with scheme `mysql://`.
+</ParamField>
+
+<ParamField path="destination_table" type="str | list[str]" required>
+  Target table name(s). Pass a list when the function returns multiple `TableFrame` objects.
+</ParamField>
+
+<ParamField path="credentials" type="UserPasswordCredentials | None" default="None">
+  Database credentials. See [Credentials](/api/credentials).
+</ParamField>
+
+<ParamField path="if_table_exists" type='"append" | "replace"' default='"append"'>
+  Strategy when the target table already exists.
+</ParamField>
+
+---
+
+### `PostgresDestination` *(deprecated)*
+
+```python
+dest = td.PostgresDestination(
+    uri="postgresql://my-pg-host:5432/mydb",
+    destination_table="output_table",
+    credentials=td.UserPasswordCredentials(
+        user=td.EnvironmentSecret("PG_USER"),
+        password=td.EnvironmentSecret("PG_PASS"),
+    ),
+)
+```
+
+<ParamField path="uri" type="str" required>
+  PostgreSQL connection URI. Both `postgresql://` and `postgres://` are valid schemes.
+</ParamField>
+
+<ParamField path="destination_table" type="str | list[str]" required>
+  Target table name(s).
+</ParamField>
+
+<ParamField path="credentials" type="UserPasswordCredentials | None" default="None">
+  Database credentials.
+</ParamField>
+
+<ParamField path="if_table_exists" type='"append" | "replace"' default='"append"'>
+  Strategy when the target table already exists.
+</ParamField>
+
+---
+
+### `OracleDestination`
+
+```python
+dest = td.OracleDestination(
+    uri="oracle://my-oracle-host:1521/orcl",
+    destination_table="SALES_OUTPUT",
+    credentials=td.UserPasswordCredentials(
+        user=td.EnvironmentSecret("ORA_USER"),
+        password=td.EnvironmentSecret("ORA_PASS"),
+    ),
+)
+```
+
+<ParamField path="uri" type="str" required>
+  Oracle connection URI with scheme `oracle://`.
+</ParamField>
+
+<ParamField path="destination_table" type="str | list[str]" required>
+  Target table name(s).
+</ParamField>
+
+<ParamField path="credentials" type="UserPasswordCredentials | None" default="None">
+  Database credentials.
+</ParamField>
+
+<ParamField path="if_table_exists" type='"append" | "replace"' default='"append"'>
+  Strategy when the target table already exists.
+</ParamField>
+
+---
+
+### `MariaDBDestination` *(deprecated)*
+
+```python
+dest = td.MariaDBDestination(
+    uri="mariadb://my-mariadb-host:3306/mydb",
+    destination_table="output_table",
+    credentials=td.UserPasswordCredentials(
+        user=td.EnvironmentSecret("MARIADB_USER"),
+        password=td.EnvironmentSecret("MARIADB_PASS"),
+    ),
+)
+```
+
+<ParamField path="uri" type="str" required>
+  MariaDB connection URI with scheme `mariadb://`.
+</ParamField>
+
+<ParamField path="destination_table" type="str | list[str]" required>
+  Target table name(s).
+</ParamField>
+
+<ParamField path="credentials" type="UserPasswordCredentials | None" default="None">
+  Database credentials.
+</ParamField>
+
+<ParamField path="if_table_exists" type='"append" | "replace"' default='"append"'>
+  Strategy when the target table already exists.
+</ParamField>
+
+---
+
+## `IfTableExistsStrategy` enum
+
+All SQL destinations accept an `if_table_exists` parameter that controls what happens when the target table already exists in the database.
+
+| Value | Behaviour |
+|-------|-----------|
+| `"append"` | Insert new rows into the existing table (default). |
+| `"replace"` | Drop and recreate the table, then insert all rows. |
+
+<Warning>
+Using `"replace"` permanently deletes all existing rows in the destination table before writing new data. Ensure you have a backup strategy if this data is not reproducible.
+</Warning>
+
+---
+
+## Table output
+
+### `TableOutput`
+
+Used internally by `@td.transformer` to write results back into Tabsdata tables. You rarely construct this directly—passing a string or list of strings to the `output_tables` parameter of `@td.transformer` creates one automatically.
+
+```python
+import tabsdata as td
+
+out = td.TableOutput("my_collection/enriched_orders")
+# or
+out = td.TableOutput(["collection/table_a", "collection/table_b"])
+```
+
+<ParamField path="table" type="str | list[str]" required>
+  Fully qualified Tabsdata table name(s) in the form `"collection/table"`.
+</ParamField>
+
+---
+
+## Path placeholders
+
+File destination URIs and paths support runtime placeholders that are replaced before writing:
+
+| Placeholder | Replaced with |
+|-------------|---------------|
+| `$EXECUTION_ID` | Unique ID for the current function execution |
+| `$TRANSACTION_ID` | Transaction ID grouping related executions |
+| `$FUNCTION_RUN_ID` | ID of the specific function run |
+| `$EXPORT_TIMESTAMP` | Unix timestamp in milliseconds at export time |
+| `$SCHEDULER_TIMESTAMP` | Timestamp when the run was scheduled |
+| `$TRIGGER_TIMESTAMP` | Timestamp of the triggering event |
+| `$FRAGMENT_IDX` | Zero-based fragment index (for list-of-frames results) |
+
+---
+
+## Related pages
+
+- [Decorators](/api/decorators) — `@td.publisher`, `@td.transformer`, `@td.subscriber`
+- [Inputs](/api/inputs) — source plugin constructors and file formats
+- [Credentials](/api/credentials) — authentication classes
+- [Secrets](/api/secrets) — `EnvironmentSecret`, `HashiCorpSecret`
+- [Connectors: File Storage](/connectors/file-storage)
+- [Connectors: Databases](/connectors/databases)
+- [Subscribing data](/guides/subscribing-data)

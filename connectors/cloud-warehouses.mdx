@@ -1,0 +1,406 @@
+---
+title: "Cloud data warehouse connectors for Tabsdata"
+sidebarTitle: "Cloud Warehouses"
+description: "Push Tabsdata TableFrames to Snowflake, BigQuery, Databricks, MongoDB, and Salesforce with purpose-built connectors."
+---
+
+Cloud warehouse connectors extend Tabsdata's reach to modern analytics platforms and SaaS systems. Each connector is distributed as an optional package (e.g., `tabsdata[snowflake]`) so you only install the dependencies you need.
+
+<Note>
+Install optional connector packages before using them. For example: `pip install tabsdata[snowflake]` or `pip install tabsdata[bigquery]`. See the [Installation](/installation) guide for details.
+</Note>
+
+---
+
+## Snowflake
+
+`SnowflakeDestination` writes TableFrame data to one or more Snowflake tables using the Snowflake stage-and-copy mechanism. Data is first staged as Parquet, then copied into the target table.
+
+### Constructor
+
+```python
+from tabsdata.connector.snowflake import SnowflakeDestination
+
+SnowflakeDestination(
+    connection_parameters: dict,
+    destination_table: str | list[str],
+    if_table_exists: "append" | "replace" = "append",
+    stage: str | None = None,
+)
+```
+
+<ParamField path="connection_parameters" type="dict" required>
+  Dictionary of Snowflake connection parameters passed directly to `snowflake.connector.connect`. Required keys:
+
+  | Key | Description |
+  |---|---|
+  | `account` | Snowflake account identifier |
+  | `user` | Snowflake username |
+  | `password` | Personal Access Token (PAT) |
+  | `role` | Snowflake role |
+  | `database` | Default database |
+  | `schema` | Default schema |
+  | `warehouse` | Snowflake virtual warehouse |
+
+  Values may be `Secret` objects to keep credentials out of source code.
+</ParamField>
+
+<ParamField path="destination_table" type="str | list[str]" required>
+  Target table name(s). Unqualified names are automatically prefixed with `database.schema` from the connection parameters. Fully qualified names (`database.schema.table`) are used as-is.
+</ParamField>
+
+<ParamField path="if_table_exists" type='"append" | "replace"'>
+  `"append"` adds rows to the existing table. `"replace"` truncates the table before writing. Defaults to `"append"`.
+</ParamField>
+
+<ParamField path="stage" type="str">
+  Name of an existing Snowflake stage. If omitted, a temporary stage is created automatically for each run.
+</ParamField>
+
+### Example
+
+```python
+import tabsdata as td
+from tabsdata import EnvironmentSecret
+from tabsdata.connector.snowflake import SnowflakeDestination
+
+@td.subscriber(
+    tables="myorg/sales/orders",
+    destination=SnowflakeDestination(
+        connection_parameters={
+            "account": EnvironmentSecret("SF_ACCOUNT"),
+            "user": EnvironmentSecret("SF_USER"),
+            "password": EnvironmentSecret("SF_PAT"),
+            "role": "SYSADMIN",
+            "database": "ANALYTICS",
+            "schema": "PUBLIC",
+            "warehouse": "COMPUTE_WH",
+        },
+        destination_table="orders_summary",
+        if_table_exists="append",
+    ),
+)
+def export_to_snowflake(orders: td.TableFrame) -> td.TableFrame:
+    return orders
+```
+
+---
+
+## Google BigQuery
+
+BigQuery output is handled by the `BigQueryConn` + `BigQueryDest` pair. Data is staged in a GCS bucket as Parquet files and then loaded into BigQuery using a load job. The GCS staging files are cleaned up automatically after each run.
+
+### `BigQueryConn`
+
+```python
+from tabsdata.connector.bigquery import BigQueryConn
+
+BigQueryConn(
+    gcs_folder: str,
+    credentials: GCPCredentials,
+    project: str = None,
+    dataset: str = None,
+    enforce_connection_params: bool = True,
+    cx_dst_configs_gcs: dict = None,
+    cx_dst_configs_bigquery: dict = None,
+)
+```
+
+<ParamField path="gcs_folder" type="str" required>
+  A `gs://` URI pointing to the folder used for staging Parquet files before the BigQuery load job. Files are deleted after the job completes.
+</ParamField>
+
+<ParamField path="credentials" type="GCPCredentials" required>
+  A `GCPServiceAccountKeyCredentials` instance. The service account must have write access to the GCS bucket and BigQuery load permissions.
+</ParamField>
+
+<ParamField path="project" type="str">
+  Default GCP project. Required when table names are not fully qualified with a project component.
+</ParamField>
+
+<ParamField path="dataset" type="str">
+  Default BigQuery dataset. Required when table names are not fully qualified with a dataset component.
+</ParamField>
+
+<ParamField path="enforce_connection_params" type="bool">
+  When `True` (default), an error is raised if a fully qualified table name conflicts with the `project` or `dataset` specified in the connection.
+</ParamField>
+
+### `BigQueryDest`
+
+```python
+from tabsdata.connector.bigquery import BigQueryDest
+
+BigQueryDest(
+    conn: BigQueryConn,
+    tables: str | list[str] | None = None,
+    if_table_exists: "append" | "replace" = "append",
+    schema_strategy: "update" | "strict" = "update",
+)
+```
+
+<ParamField path="tables" type="str | list[str] | None">
+  Target BigQuery table(s) in `project.dataset.table` format. If `None`, the table names are inferred from the source tables of the subscriber's input. `project` and `dataset` must be set in `BigQueryConn` when using `None`.
+</ParamField>
+
+<ParamField path="if_table_exists" type='"append" | "replace"'>
+  `"replace"` uses `WRITE_TRUNCATE`; `"append"` uses `WRITE_APPEND`.
+</ParamField>
+
+<ParamField path="schema_strategy" type='"update" | "strict"'>
+  `"update"` allows new columns to be added automatically. `"strict"` fails if the schema differs from the existing table.
+</ParamField>
+
+### Example
+
+```python
+import tabsdata as td
+from tabsdata import GCPServiceAccountKeyCredentials, EnvironmentSecret
+from tabsdata.connector.bigquery import BigQueryConn, BigQueryDest
+
+creds = GCPServiceAccountKeyCredentials(
+    service_account_key=EnvironmentSecret("GCP_SA_KEY_JSON"),
+)
+
+conn = BigQueryConn(
+    gcs_folder="gs://my-staging-bucket/tabsdata-stage/",
+    credentials=creds,
+    project="my-gcp-project",
+    dataset="analytics",
+)
+
+@td.subscriber(
+    tables="myorg/sales/orders",
+    destination=BigQueryDest(
+        conn=conn,
+        tables="orders_summary",   # resolves to my-gcp-project.analytics.orders_summary
+        if_table_exists="append",
+        schema_strategy="update",
+    ),
+)
+def export_to_bigquery(orders: td.TableFrame) -> td.TableFrame:
+    return orders
+```
+
+---
+
+## Databricks
+
+Databricks connectors support both reading from and writing to Databricks SQL tables. The `DatabricksSource` executes SQL queries via the Databricks SQL connector, while `DatabricksDestination` uploads Parquet files to a Databricks managed volume before ingesting them into Delta tables.
+
+### `DatabricksSource`
+
+```python
+from tabsdata.connector.databricks import DatabricksSource
+
+DatabricksSource(
+    host_url: str,
+    token: str | Secret,
+    queries: str | list[str],
+    initial_values: dict | None = None,
+    warehouse: str | None = None,
+    warehouse_id: str | None = None,
+)
+```
+
+<ParamField path="host_url" type="str" required>
+  Databricks workspace URL, e.g. `https://my-workspace.azuredatabricks.net`.
+</ParamField>
+
+<ParamField path="token" type="str | Secret" required>
+  Databricks Personal Access Token (PAT).
+</ParamField>
+
+<ParamField path="queries" type="str | list[str]" required>
+  SQL query or queries to execute. Queries may contain `:param` placeholders filled from `initial_values`.
+</ParamField>
+
+<ParamField path="warehouse" type="str">
+  Warehouse name. Provide either `warehouse` or `warehouse_id`, not both.
+</ParamField>
+
+<ParamField path="warehouse_id" type="str">
+  Warehouse ID. Use when you know the ID rather than the name.
+</ParamField>
+
+### `DatabricksDestination`
+
+```python
+from tabsdata.connector.databricks import DatabricksDestination
+
+DatabricksDestination(
+    host_url: str,
+    token: str | Secret,
+    tables: str | list[str],
+    volume: str,
+    catalog: str | None = None,
+    schema: str | None = None,
+    warehouse: str | None = None,
+    warehouse_id: str | None = None,
+    if_table_exists: "append" | "replace" = "append",
+    schema_strategy: "update" | "strict" = "update",
+)
+```
+
+<ParamField path="tables" type="str | list[str]" required>
+  Target table(s) in `catalog.schema.table` form, or short names that are qualified using `catalog` and `schema`.
+</ParamField>
+
+<ParamField path="volume" type="str" required>
+  Name of the Databricks managed volume used for intermediate staging. Files are deleted after the load completes.
+</ParamField>
+
+---
+
+## MongoDB
+
+`MongoDBDestination` writes documents into MongoDB collections. Use the `collections_with_ids` parameter to specify the target collection and the field used as the document identifier.
+
+### `MongoDBDestination`
+
+```python
+from tabsdata.connector.mongodb import MongoDBDestination
+from tabsdata import UserPasswordCredentials
+
+MongoDBDestination(
+    uri: str,
+    collections_with_ids: tuple[str, str | None] | list[tuple[str, str | None]],
+    credentials: UserPasswordCredentials = None,
+    connection_options: dict = None,
+    if_collection_exists: "append" | "replace" = "append",
+    use_trxs: bool = False,
+    docs_per_trx: int = 1000,
+    maintain_order: bool = False,
+    update_existing: bool = True,
+    fail_on_duplicate_key: bool = True,
+)
+```
+
+<ParamField path="uri" type="str" required>
+  MongoDB connection URI, e.g. `mongodb://host:27017`.
+</ParamField>
+
+<ParamField path="collections_with_ids" type="tuple | list[tuple]" required>
+  A tuple `(collection_name, id_field)` or a list of such tuples. `collection_name` must be fully qualified as `database.collection`. Set `id_field` to `None` to let MongoDB auto-generate `_id`.
+
+  **Example:** `("mydb.orders", "order_id")` — uses `order_id` as the unique key.
+</ParamField>
+
+<ParamField path="if_collection_exists" type='"append" | "replace"'>
+  `"replace"` drops and recreates the collection; `"append"` upserts documents.
+</ParamField>
+
+<ParamField path="use_trxs" type="bool">
+  When `True`, data is written inside MongoDB transactions (requires a replica set). Defaults to `False`.
+</ParamField>
+
+**Example:**
+
+```python
+import tabsdata as td
+from tabsdata import UserPasswordCredentials, EnvironmentSecret
+from tabsdata.connector.mongodb import MongoDBDestination
+
+@td.subscriber(
+    tables="myorg/crm/contacts",
+    destination=MongoDBDestination(
+        uri="mongodb://mongo.example.com:27017",
+        collections_with_ids=("crm.contacts", "contact_id"),
+        credentials=UserPasswordCredentials(
+            user=EnvironmentSecret("MONGO_USER"),
+            password=EnvironmentSecret("MONGO_PASSWORD"),
+        ),
+        if_collection_exists="append",
+        update_existing=True,
+    ),
+)
+def export_contacts(contacts: td.TableFrame) -> td.TableFrame:
+    return contacts
+```
+
+---
+
+## Salesforce
+
+The Salesforce connector lets you query Salesforce objects using SOQL queries or load Salesforce Reports as tabular data.
+
+### `SalesforceTokenCredentials`
+
+```python
+from tabsdata.connector.salesforce import SalesforceTokenCredentials
+
+SalesforceTokenCredentials(
+    username: str | Secret,
+    password: str | Secret,
+    security_token: str | Secret,
+)
+```
+
+### `SalesforceSource`
+
+Executes SOQL queries against Salesforce objects.
+
+```python
+from tabsdata.connector.salesforce import SalesforceSource
+
+SalesforceSource(
+    credentials: SalesforceCredentials,
+    query: str | list[str],
+    instance_url: str = None,
+    include_deleted: bool = False,
+    initial_last_modified: str = None,
+)
+```
+
+<ParamField path="query" type="str | list[str]" required>
+  SOQL query or list of queries. Use the `$lastModified` placeholder in queries when `initial_last_modified` is set — it is replaced automatically with the latest modification timestamp on each run.
+</ParamField>
+
+<ParamField path="initial_last_modified" type="str">
+  ISO 8601 datetime string with timezone. Enables incremental loading based on `SystemModstamp`. Required when any query contains `$lastModified`.
+</ParamField>
+
+### `SalesforceReportSource`
+
+Executes Salesforce Reports and returns their tabular output.
+
+```python
+from tabsdata.connector.salesforce import SalesforceReportSource
+
+SalesforceReportSource(
+    credentials: SalesforceCredentials,
+    report: str | list[str],
+    column_name_strategy: "columnName" | "label",
+    find_report_by: "id" | "name" = None,
+    filter: tuple | list[tuple] = None,
+    filter_logic: str = None,
+    instance_url: str = None,
+    last_modified_column: str = None,
+    initial_last_modified: str = None,
+)
+```
+
+**Salesforce publisher example:**
+
+```python
+import tabsdata as td
+from tabsdata import EnvironmentSecret
+from tabsdata.connector.salesforce import SalesforceSource, SalesforceTokenCredentials
+
+creds = SalesforceTokenCredentials(
+    username=EnvironmentSecret("SF_USERNAME"),
+    password=EnvironmentSecret("SF_PASSWORD"),
+    security_token=EnvironmentSecret("SF_TOKEN"),
+)
+
+@td.publisher(
+    source=SalesforceSource(
+        credentials=creds,
+        query="SELECT Id, Name, Amount FROM Opportunity WHERE SystemModstamp > $lastModified",
+        initial_last_modified="2024-01-01T00:00:00+00:00",
+    ),
+    tables="myorg/crm/opportunities",
+)
+def ingest_opportunities(opps: td.TableFrame) -> td.TableFrame:
+    return opps
+```

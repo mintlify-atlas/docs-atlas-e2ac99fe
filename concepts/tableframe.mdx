@@ -1,0 +1,292 @@
+---
+title: "TableFrame: Polars-backed data transformation API"
+sidebarTitle: "TableFrame"
+description: "TableFrame is Tabsdata's lazy, Polars-backed data abstraction for filtering, joining, and transforming tabular data inside publisher, transformer, and subscriber functions."
+---
+
+`TableFrame` is the primary data structure inside every Tabsdata function. When a publisher, transformer, or subscriber runs, the server deserialises each input table into a `TableFrame` and passes it to your Python function as an argument. Your function then returns one or more `TableFrame` objects, which the server materialises and stores as versioned tables.
+
+## Relationship to Polars
+
+Internally, `TableFrame` wraps a Polars `LazyFrame`. Operations on a `TableFrame` (filters, selects, joins, etc.) are recorded as a lazy computation plan and are **not executed until the function returns**. This means you can chain many operations cheaply, and the server only evaluates the full plan at materialisation time.
+
+`TableFrame` adds a layer on top of Polars to:
+
+- Attach Tabsdata-specific **system columns** (`SysCol`) that carry provenance and execution metadata.
+- Enforce schema and type tracking through the server execution context.
+- Support UDF registration and Tabsdata-aware type coercion.
+
+<Note>
+  Do not manually drop or rename system columns (those accessible via `SysCol`). Tabsdata uses them internally for data lineage and versioning. They are automatically removed from external outputs when a subscriber writes to a destination.
+</Note>
+
+## Creating a TableFrame
+
+Inside a registered function, `TableFrame` objects arrive as function arguments. You can also construct them manually when testing locally:
+
+```python
+import tabsdata as td
+
+# From a Python dictionary
+tf = td.TableFrame({"id": [1, 2, 3], "name": ["Alice", "Bob", "Carol"]})
+
+# From a Polars LazyFrame or DataFrame
+import polars as pl
+tf = td.from_polars(pl.DataFrame({"value": [10, 20, 30]}))
+
+# From a Pandas DataFrame
+import pandas as pd
+tf = td.from_pandas(pd.DataFrame({"score": [0.9, 0.7, 0.8]}))
+
+# Empty TableFrame (useful as a starting point)
+from tabsdata.tableframe import empty, Schema
+tf = empty()
+```
+
+## Converting back to standard formats
+
+```python
+# To Polars (lazy)
+lf: pl.LazyFrame = tf.to_polars_lf()
+
+# To Polars (materialised)
+df: pl.DataFrame = td.to_polars_df(tf)
+
+# To Pandas
+pdf = td.to_pandas(tf)
+
+# To a plain Python dictionary
+d = td.to_dict(tf)
+```
+
+## Core transformation operations
+
+All operations return a new `TableFrame`; the original is never modified (functional API).
+
+### Selecting columns
+
+```python
+# Keep only specific columns
+result = tf.select(["id", "name", "amount"])
+
+# Select with expressions
+result = tf.select([td.col("amount") * 2, td.col("name").str.to_uppercase()])
+```
+
+### Filtering rows
+
+```python
+# Keep rows where country is 'ES'
+result = tf.filter(td.col("country").eq("ES"))
+
+# Multiple conditions
+result = tf.filter(
+    td.col("amount").gt(100) & td.col("status").eq("active")
+)
+```
+
+### Adding and transforming columns
+
+```python
+# Add a new column
+result = tf.with_columns(
+    (td.col("price") * td.col("quantity")).alias("total")
+)
+
+# Add a literal constant column
+result = tf.with_columns(td.lit("EUR").alias("currency"))
+```
+
+### Joining two TableFrames
+
+```python
+@td.transformer(
+    input_tables=["raw/orders", "raw/customers"],
+    output_tables=["enriched"],
+)
+def enrich(orders: td.TableFrame, customers: td.TableFrame) -> td.TableFrame:
+    return orders.join(customers, on="customer_id", how="left")
+```
+
+### Grouping and aggregating
+
+```python
+result = (
+    tf.group_by("country")
+    .agg([
+        td.col("amount").sum().alias("total_amount"),
+        td.col("id").count().alias("order_count"),
+    ])
+)
+```
+
+### Sorting
+
+```python
+result = tf.sort("amount", descending=True)
+```
+
+### Dropping and renaming columns
+
+```python
+# Drop columns
+result = tf.drop(["temp_col", "debug_col"])
+
+# Rename columns
+result = tf.rename({"old_name": "new_name", "qty": "quantity"})
+```
+
+### Casting column types
+
+```python
+result = tf.cast({"amount": td.Float64, "created_at": td.Datetime})
+```
+
+### Limiting rows
+
+```python
+# Keep the first 1000 rows
+result = tf.limit(1000)
+```
+
+### Concatenating multiple TableFrames
+
+```python
+# Stack two TableFrames vertically (same schema)
+result = td.concat([tf_jan, tf_feb, tf_mar])
+```
+
+## Column expressions
+
+Use `td.col()` to reference columns by name, and `td.lit()` to create literal values:
+
+```python
+# Reference a column
+expr = td.col("price")
+
+# Arithmetic
+total = td.col("price") * td.col("quantity")
+
+# String operations
+upper = td.col("name").str.to_uppercase()
+
+# Conditional (when/then/otherwise)
+result = tf.with_columns(
+    td.col("score")
+    .map_elements(lambda x: "high" if x > 0.8 else "low")
+    .alias("tier")
+)
+
+# Literal value
+currency = td.lit("USD").alias("currency")
+```
+
+## User-defined functions (UDF)
+
+For operations that cannot be expressed as column expressions, use `td.UDF`:
+
+```python
+import tabsdata as td
+
+def clean_phone(phone: str) -> str:
+    return phone.replace("-", "").replace(" ", "")
+
+@td.transformer(
+    input_tables=["raw/contacts"],
+    output_tables=["clean_contacts"],
+)
+def normalize(contacts: td.TableFrame) -> td.TableFrame:
+    return contacts.with_columns(
+        td.col("phone")
+        .map_elements(clean_phone, return_dtype=td.String)
+        .alias("phone_clean")
+    )
+```
+
+## Built-in data types
+
+Tabsdata exposes all Polars primitive types through the `td` namespace:
+
+| Category | Types |
+|---|---|
+| Boolean | `td.Boolean` |
+| String | `td.String` (alias: `td.Utf8`) |
+| Signed integers | `td.Int8`, `td.Int16`, `td.Int32`, `td.Int64`, `td.Int128` |
+| Unsigned integers | `td.UInt8`, `td.UInt16`, `td.UInt32`, `td.UInt64` |
+| Floats | `td.Float16`, `td.Float32`, `td.Float64` |
+| Temporal | `td.Date`, `td.Datetime`, `td.Duration`, `td.Time` |
+| Decimal | `td.Decimal` |
+| Categorical | `td.Categorical`, `td.Enum` |
+| Null | `td.Null` |
+
+Type groups for use in `isinstance` checks or selectors:
+
+```python
+td.FLOAT_DTYPES          # Float16, Float32, Float64
+td.INTEGER_DTYPES        # all integer types
+td.SIGNED_INTEGER_DTYPES # Int8 … Int128
+td.UNSIGNED_INTEGER_DTYPES # UInt8 … UInt64
+td.NUMERIC_DTYPES        # all numeric types
+td.TEMPORAL_DTYPES       # Date, Datetime, Duration, Time
+```
+
+## Inspecting a TableFrame
+
+```python
+# List user-visible column names (excludes system columns)
+print(tf.columns())            # default: kind="user"
+
+# All columns including system columns
+print(tf.columns(kind="all"))
+
+# System columns only
+print(tf.columns(kind="system"))
+
+# Schema (column name → dtype mapping)
+print(tf.schema)
+
+# Check if empty
+if tf.is_empty():
+    ...
+```
+
+## Lazy execution model
+
+`TableFrame` operations are **lazy** — no data is read or computed when you chain `filter()`, `select()`, `join()`, etc. The execution plan is built up and evaluated only when:
+
+1. The function returns its `TableFrame` result to the Tabsdata server (normal production path).
+2. You explicitly call `to_polars_df()`, `to_pandas()`, or `to_dict()` during local testing.
+
+This means you can build arbitrarily complex transformation chains without memory or performance concerns at definition time.
+
+```python
+# All of this is lazy — no data is moved yet
+result = (
+    orders
+    .filter(td.col("status").eq("shipped"))
+    .join(customers, on="customer_id", how="left")
+    .select(["order_id", "name", "total"])
+    .sort("total", descending=True)
+    .limit(500)
+)
+
+# Data is materialised only here (in production, the server does this)
+df = result.to_polars_df()
+```
+
+## Related pages
+
+<CardGroup cols={2}>
+  <Card title="Functions" icon="function" href="/concepts/functions">
+    How TableFrame flows through publisher, transformer, and subscriber functions.
+  </Card>
+  <Card title="API: TableFrame" icon="code" href="/api/tableframe">
+    Full API reference for all TableFrame methods and expressions.
+  </Card>
+  <Card title="Transforming Data" icon="arrows-rotate" href="/guides/transforming-data">
+    Step-by-step guide for writing transformer functions with TableFrame.
+  </Card>
+  <Card title="API: Inputs & Outputs" icon="plug" href="/api/inputs">
+    Sources and destinations that feed data into and out of TableFrame functions.
+  </Card>
+</CardGroup>

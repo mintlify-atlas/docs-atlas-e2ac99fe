@@ -1,0 +1,149 @@
+---
+title: "Install Tabsdata and Configure Your Environment"
+sidebarTitle: "Installation"
+description: "Install Tabsdata via pip, start the tdserver binary, log in with the CLI, and configure SSL certificates and default admin credentials for production."
+---
+
+Tabsdata is distributed as a binary Python package on PyPI that includes both the Python client library and the compiled `tdserver` server binary. This page covers everything you need to get from a fresh environment to a running server.
+
+## Requirements
+
+| Requirement | Version |
+|---|---|
+| Python | **3.12** |
+| Operating system | Linux, macOS, or Windows (64-bit) |
+
+A virtual environment is strongly recommended to isolate Tabsdata's dependencies from your system Python installation.
+
+```bash
+python3.12 -m venv .venv
+source .venv/bin/activate   # Linux / macOS
+.venv\Scripts\activate      # Windows
+```
+
+## Install Options
+
+### Full Install (Recommended)
+
+The `[all]` extra installs the `tdserver` server binary plus all built-in connector dependencies (file, SQL, cloud storage, streaming, and warehouse connectors):
+
+```bash
+pip install "tabsdata[all]"
+```
+
+This is the recommended starting point. It gives you everything needed to run the server and use any connector out of the box.
+
+### Base Install
+
+If you only need the Python client library — for example, to write and package publisher, transformer, or subscriber functions without running the server locally — you can install the base package:
+
+```bash
+pip install tabsdata
+```
+
+<Note>
+  The base install does **not** include the `tdserver` binary. You will not be able to start a local server without the full install or a separately deployed server binary.
+</Note>
+
+## About the Binary Distribution
+
+The `tabsdata` package on [PyPI](https://pypi.org/project/tabsdata/) is a **binary Enterprise Package** built on the open-source Tabsdata foundation. It ships pre-compiled native binaries for Linux, macOS, and Windows. The open-source repository (Python client and connector framework) is available on [GitHub](https://github.com/tabsdata/tabsdata); the `tdserver` binary is distributed exclusively through PyPI.
+
+## Starting the Server
+
+`tdserver` is a Rust-based server binary that manages the table storage engine, the dependency-graph resolver, and the function execution runtime. After installation it is available on your `PATH` inside the active virtual environment.
+
+Start the server:
+
+```bash
+tdserver start
+```
+
+Verify it is running:
+
+```bash
+tdserver status
+```
+
+Stop the server:
+
+```bash
+tdserver stop
+```
+
+The server stores all of its state — configuration, tables, execution history, credentials — under the `~/.tabsdata` directory by default. No additional infrastructure (database, message broker, etc.) is required for a local installation.
+
+## Logging In
+
+Once the server is running, authenticate the `td` CLI:
+
+```bash
+td login --server http://localhost --user admin --password tabsdata --role sys_admin
+```
+
+<Note>
+  The default admin credentials are **username:** `admin` and **password:** `tabsdata`. These are suitable for local development only. **Change the admin password before exposing the server to any network or shared environment.**
+</Note>
+
+You can log out at any time with:
+
+```bash
+td logout
+```
+
+## Configuration Directory
+
+All client-side configuration and cached credentials are stored in:
+
+```
+~/.tabsdata/
+```
+
+This directory is created automatically on first use. It contains:
+
+- Saved login credentials (server URL and session token)
+- SSL/TLS certificates for HTTPS servers
+- Pinned collection and function names for the interactive CLI
+
+You can inspect the currently authenticated user with:
+
+```bash
+td auth info
+```
+
+## SSL/TLS Certificate Setup
+
+If your Tabsdata server is running behind HTTPS with a self-signed certificate, you must register the certificate with the CLI before any commands will succeed:
+
+```bash
+td auth add_cert --server https://your-server-hostname --pem /path/to/cert.pem
+```
+
+The certificate is stored in `~/.tabsdata/client/https/` and is automatically used for all subsequent connections to that server. To remove a certificate:
+
+```bash
+td auth delete_cert --server https://your-server-hostname
+```
+
+<Warning>
+  Do not skip certificate registration for HTTPS servers. Without it, every CLI command will fail with a TLS verification error. Use `td auth add_cert` with the PEM file provided by your server administrator.
+</Warning>
+
+## Verifying the Installation
+
+Run the following commands to confirm that both the CLI and the server binary are correctly installed and on your `PATH`:
+
+```bash
+td --version
+tdserver --version
+```
+
+Then, with the server running and the CLI logged in, list collections to confirm end-to-end connectivity:
+
+```bash
+td collection list
+```
+
+<Tip>
+  Ready to build your first pipeline? Head over to the [Quickstart](/quickstart) to create a collection, register publisher/transformer/subscriber functions, and trigger your first execution. For a full reference of all CLI commands, see the [CLI overview](/cli/overview).
+</Tip>

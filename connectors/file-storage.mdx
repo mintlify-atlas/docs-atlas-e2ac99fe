@@ -1,0 +1,357 @@
+---
+title: "File and cloud storage connectors for Tabsdata"
+sidebarTitle: "File Storage"
+description: "Read and write CSV, Parquet, Avro, NDJSON, and Log files from local disk, Amazon S3, Azure, or Google Cloud Storage."
+---
+
+File and cloud storage connectors let you publish tabular data that lives in flat files — on your local filesystem or in a cloud object store — and subscribe results back to those same locations. Every connector in this category supports the same set of file formats and shares a common credential abstraction, so switching between storage backends requires minimal code changes.
+
+## Supported file formats
+
+All file-based connectors accept a `format` parameter that selects how files are parsed or written. When `format` is omitted, Tabsdata infers the format from the file extension.
+
+| Format string | Class | Extensions |
+|---|---|---|
+| `"csv"` | `CSVFormat` | `.csv` |
+| `"parquet"` | `ParquetFormat` | `.parquet` |
+| `"avro"` | `AvroFormat` | `.avro` |
+| `"ndjson"` or `"jsonl"` | `NDJSONFormat` | `.ndjson`, `.jsonl` |
+| `"log"` | `LogFormat` | `.log` |
+
+You can either pass a format string or an explicit format object:
+
+```python
+from tabsdata import CSVFormat, ParquetFormat, AvroFormat, NDJSONFormat
+
+# These two are equivalent
+source_a = S3Source("s3://bucket/data.csv", credentials=creds)
+source_b = S3Source("s3://bucket/data/", credentials=creds, format="csv")
+
+# Fine-grained CSV control
+source_c = S3Source(
+    "s3://bucket/data/",
+    credentials=creds,
+    format=CSVFormat(separator=",", input_has_header=True),
+)
+```
+
+## Credential classes
+
+Each cloud backend has its own credential type. All credential values accept either a plain string or a `Secret` object (see [Secrets](/guides/secrets)).
+
+### `S3AccessKeyCredentials`
+
+```python
+S3AccessKeyCredentials(
+    aws_access_key_id: str | Secret,
+    aws_secret_access_key: str | Secret,
+)
+```
+
+### `AzureAccountKeyCredentials`
+
+```python
+AzureAccountKeyCredentials(
+    account_name: str | Secret,
+    account_key: str | Secret,
+)
+```
+
+### `GCPServiceAccountKeyCredentials`
+
+```python
+GCPServiceAccountKeyCredentials(
+    service_account_key: str | Secret,  # JSON key string
+)
+```
+
+### `HMACCredentials`
+
+Generic HMAC credentials compatible with any S3-compatible API (GCS HMAC keys, MinIO, etc.):
+
+```python
+HMACCredentials(
+    access_key: str | Secret,
+    secret_key: str | Secret,
+)
+```
+
+<Note>
+Store sensitive credential values using `EnvironmentSecret` or another secret backend rather than hard-coding strings. See [Secrets](/guides/secrets) for full details.
+</Note>
+
+---
+
+## Local file connectors
+
+### `LocalFileSource`
+
+Reads one or more local files and maps them as inputs to a publisher function.
+
+```python
+LocalFileSource(
+    path: str | list[str],
+    format: str | FileFormat = None,
+    initial_last_modified: str | datetime = None,
+    file_info: str | FileInfo | None = None,
+)
+```
+
+<ParamField path="path" type="str | list[str]" required>
+  Absolute or relative path(s) to the source files. Glob patterns are supported (e.g., `/data/*.csv`).
+</ParamField>
+
+<ParamField path="format" type="str | FileFormat">
+  File format. Inferred from the extension when omitted. Supported values: `"csv"`, `"parquet"`, `"avro"`, `"ndjson"`, `"jsonl"`, `"log"`.
+</ParamField>
+
+<ParamField path="initial_last_modified" type="str | datetime">
+  ISO 8601 datetime string or `datetime` object. Only files modified **after** this timestamp are ingested on the first run. Subsequent runs use the stored offset automatically.
+</ParamField>
+
+<ParamField path="file_info" type="str | None">
+  Adds file-origin metadata as system columns. `"name"` adds the file name; `"uri"` adds the full URI.
+</ParamField>
+
+### `LocalFileDestination`
+
+Writes publisher output to one or more local files.
+
+```python
+LocalFileDestination(
+    path: str | list[str],
+    format: str | FileFormat = None,
+)
+```
+
+<ParamField path="path" type="str | list[str]" required>
+  Destination path(s). Use the placeholder `$FRAGMENT_IDX` in the path when a function returns a list of TableFrames.
+</ParamField>
+
+<ParamField path="format" type="str | FileFormat">
+  Output format. Inferred from the extension when omitted. Supported: `"csv"`, `"parquet"`, `"avro"`, `"ndjson"`.
+</ParamField>
+
+**Example — local CSV publisher:**
+
+```python
+import tabsdata as td
+
+@td.publisher(
+    source=td.LocalFileSource("/data/sales/*.csv", format="csv"),
+    tables="myorg/sales/raw_sales",
+)
+def ingest_csv(sales: td.TableFrame) -> td.TableFrame:
+    return sales
+```
+
+---
+
+## Amazon S3 connectors
+
+### `S3Source`
+
+```python
+S3Source(
+    uri: str | list[str],
+    credentials: S3Credentials,
+    format: str | FileFormat = None,
+    initial_last_modified: str | datetime = None,
+    region: str = None,
+    file_info: str | FileInfo | None = None,
+)
+```
+
+<ParamField path="uri" type="str | list[str]" required>
+  S3 URI(s) in the form `s3://bucket/path/to/files`. Wildcard patterns (`*`, `?`) are supported.
+</ParamField>
+
+<ParamField path="credentials" type="S3Credentials" required>
+  An `S3AccessKeyCredentials` or `HMACCredentials` instance.
+</ParamField>
+
+<ParamField path="format" type="str | FileFormat">
+  File format. Inferred from URI extension when omitted.
+</ParamField>
+
+<ParamField path="initial_last_modified" type="str | datetime">
+  Process only objects modified after this timestamp on the first run.
+</ParamField>
+
+<ParamField path="region" type="str">
+  AWS region of the S3 bucket. Falls back to the default AWS region if not provided.
+</ParamField>
+
+<ParamField path="file_info" type="str | None">
+  `"name"` or `"uri"` — adds file-origin metadata as system columns.
+</ParamField>
+
+### `S3Destination`
+
+```python
+S3Destination(
+    uri: str | list[str],
+    credentials: S3Credentials,
+    format: str | FileFormat = None,
+    region: str = None,
+    catalog: AWSGlue = None,
+)
+```
+
+<ParamField path="catalog" type="AWSGlue">
+  An `AWSGlue` catalog instance. When set, the written Parquet files are registered in the AWS Glue / Apache Iceberg catalog. Requires `format="parquet"`.
+</ParamField>
+
+**Complete S3 publisher example:**
+
+```python
+import tabsdata as td
+from tabsdata import S3Source, S3AccessKeyCredentials, EnvironmentSecret
+
+creds = S3AccessKeyCredentials(
+    aws_access_key_id=EnvironmentSecret("AWS_ACCESS_KEY_ID"),
+    aws_secret_access_key=EnvironmentSecret("AWS_SECRET_ACCESS_KEY"),
+)
+
+@td.publisher(
+    source=S3Source(
+        uri="s3://my-bucket/events/*.parquet",
+        credentials=creds,
+        region="us-east-1",
+        initial_last_modified="2024-01-01T00:00:00+00:00",
+    ),
+    tables="myorg/events/raw",
+)
+def ingest_s3_events(events: td.TableFrame) -> td.TableFrame:
+    return events
+```
+
+### AWS Glue catalog (`AWSGlue`)
+
+`AWSGlue` registers Parquet files written by `S3Destination` in an Apache Iceberg catalog backed by AWS Glue.
+
+```python
+AWSGlue(
+    definition: dict,        # Iceberg catalog configuration dict
+    tables: str | list[str], # Target Iceberg table name(s)
+    auto_create_at: list[str | None] | str | None = None,
+    if_table_exists: "append" | "replace" = "append",
+    partitioned_table: bool = False,
+    schema_strategy: "update" | "strict" = "update",
+    s3_credentials: S3Credentials = None,
+    s3_region: str = None,
+)
+```
+
+---
+
+## Azure Blob Storage connectors
+
+### `AzureSource`
+
+```python
+AzureSource(
+    uri: str | list[str],
+    credentials: AzureCredentials,
+    format: str | FileFormat = None,
+    initial_last_modified: str | datetime = None,
+    file_info: str | FileInfo | None = None,
+)
+```
+
+URIs use the scheme `az://container/path/to/files`.
+
+### `AzureDestination`
+
+```python
+AzureDestination(
+    uri: str | list[str],
+    credentials: AzureCredentials,
+    format: str | FileFormat = None,
+)
+```
+
+**Example:**
+
+```python
+from tabsdata import AzureSource, AzureAccountKeyCredentials, EnvironmentSecret
+
+creds = AzureAccountKeyCredentials(
+    account_name=EnvironmentSecret("AZURE_STORAGE_ACCOUNT"),
+    account_key=EnvironmentSecret("AZURE_STORAGE_KEY"),
+)
+
+source = AzureSource(
+    uri="az://mycontainer/data/*.parquet",
+    credentials=creds,
+)
+```
+
+---
+
+## Google Cloud Storage connectors
+
+### `GCSSource`
+
+```python
+GCSSource(
+    uri: str | list[str],
+    credentials: GCPCredentials,
+    format: str | FileFormat = None,
+    initial_last_modified: str | datetime = None,
+    file_info: str | FileInfo | None = None,
+)
+```
+
+URIs use the scheme `gs://bucket/path/to/files`.
+
+### `GCSDestination`
+
+```python
+GCSDestination(
+    uri: str | list[str],
+    credentials: GCPCredentials,
+    format: str | FileFormat = None,
+)
+```
+
+**Example:**
+
+```python
+from tabsdata import GCSSource, GCPServiceAccountKeyCredentials, EnvironmentSecret
+
+creds = GCPServiceAccountKeyCredentials(
+    service_account_key=EnvironmentSecret("GCP_SERVICE_ACCOUNT_JSON"),
+)
+
+source = GCSSource(
+    uri="gs://my-bucket/exports/*.csv",
+    credentials=creds,
+    format="csv",
+)
+```
+
+---
+
+## Path placeholders in destination URIs
+
+`S3Destination` and `LocalFileDestination` support dynamic path placeholders that are resolved at runtime:
+
+| Placeholder | Value |
+|---|---|
+| `$EXECUTION_ID` | Unique ID of the current execution |
+| `$EXPORT_TIMESTAMP` | Unix timestamp (ms) at export time |
+| `$FUNCTION_RUN_ID` | Unique ID of the function run |
+| `$TRANSACTION_ID` | Transaction ID |
+| `$FRAGMENT_IDX` | Fragment index (for list-of-TableFrame results) |
+
+```python
+destination = S3Destination(
+    uri="s3://bucket/output/$EXECUTION_ID/results.parquet",
+    credentials=creds,
+)
+```
+
+<Tip>
+Use `$FRAGMENT_IDX` in the URI when your subscriber function returns a `list[TableFrame]`. Each fragment is written to a separate file with the index substituted in the path.
+</Tip>

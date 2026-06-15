@@ -1,0 +1,149 @@
+---
+title: "td auth: certificate management commands"
+sidebarTitle: "auth"
+description: "Manage SSL/TLS certificates for Tabsdata servers — add, delete, and inspect certificates for self-signed HTTPS connections."
+---
+
+The `td auth` command group handles SSL certificate management and the authentication state of your current CLI session. When your Tabsdata server uses a self-signed certificate, you must register that certificate locally before the CLI can establish a trusted HTTPS connection. The group also exposes subcommands to inspect the currently authenticated user and to change your role or password without needing to fully log out.
+
+## Subcommands
+
+### `td auth add_cert`
+
+Add a PEM certificate for a Tabsdata server. Only needed when the server uses a self-signed certificate.
+
+```bash
+td auth add_cert --server <url> --pem <path>
+```
+
+**Flags**
+
+| Flag | Short | Required | Description |
+|------|-------|----------|-------------|
+| `--server` | `-s` | Yes* | URL of the Tabsdata server (e.g. `https://myserver:8080`). Prompted if omitted. |
+| `--pem` | | Yes* | Path to the PEM certificate file on your local machine. Prompted if omitted. |
+
+\* Prompted interactively if not supplied and `--no-prompt` is not set.
+
+The certificate is copied to the Tabsdata certificate store directory (`~/.tabsdata/certs/` by default) and named after the server URL. If the server URL does not include a protocol, `https://` is prepended automatically.
+
+**Example**
+
+```bash
+# Add a self-signed certificate for a local dev server
+td auth add_cert \
+  --server https://localhost:8080 \
+  --pem ~/certs/myserver.pem
+```
+
+---
+
+### `td auth delete_cert`
+
+Remove the certificate that was previously added for a server.
+
+```bash
+td auth delete_cert --server <url>
+```
+
+**Flags**
+
+| Flag | Short | Required | Description |
+|------|-------|----------|-------------|
+| `--server` | `-s` | Yes* | URL of the Tabsdata server whose certificate should be deleted. Prompted if omitted. |
+
+**Example**
+
+```bash
+td auth delete_cert --server https://localhost:8080
+```
+
+If no certificate is found for the specified server, the command prints the expected path and exits without error.
+
+---
+
+### `td auth info`
+
+Display information about the currently authenticated user — name, email, current active role, and all roles the user belongs to.
+
+```bash
+td auth info
+```
+
+This command requires an active login session. It prints a table with the following columns: **Name**, **Email**, **Current role**, **All roles**.
+
+**Example**
+
+```bash
+td auth info
+```
+
+---
+
+### `td auth role_change`
+
+Switch the active role for the current session without logging out and back in.
+
+```bash
+td auth role_change <role>
+```
+
+**Arguments**
+
+| Argument | Description |
+|----------|-------------|
+| `role` | Name of the role to activate for the current session. |
+
+**Example**
+
+```bash
+td auth role_change admin
+```
+
+---
+
+### `td auth password_change`
+
+Change the password of a user on a Tabsdata server. This command opens a new unauthenticated connection so it works even when your current session credentials are outdated.
+
+```bash
+td auth password_change <server-url> \
+  --user <username> \
+  --old-password <old-pw> \
+  --new-password <new-pw>
+```
+
+**Arguments**
+
+| Argument | Description |
+|----------|-------------|
+| `server-url` | URL of the Tabsdata server (positional argument). |
+
+**Flags**
+
+| Flag | Short | Required | Description |
+|------|-------|----------|-------------|
+| `--user` | `-u` | Yes* | Username whose password will be changed. Prompted if omitted. |
+| `--old-password` | `-p` | Yes* | Current password. Prompted (hidden input) if omitted. |
+| `--new-password` | `-n` | Yes* | New password. Prompted twice (hidden input, with confirmation) if omitted. |
+
+\* Prompted interactively if not supplied and `--no-prompt` is not set.
+
+<Warning>
+Passing passwords as plain command-line arguments is discouraged. Prefer entering them through the interactive prompt or via environment variables to avoid leaking credentials in shell history.
+</Warning>
+
+**Example**
+
+```bash
+# Interactively prompted new password
+td auth password_change https://my-server:8080 --user alice
+```
+
+```bash
+# Non-interactive (avoid in shared environments)
+td auth password_change https://my-server:8080 \
+  --user alice \
+  --old-password old_s3cr3t \
+  --new-password new_s3cr3t
+```

@@ -1,0 +1,244 @@
+---
+title: "td collection: manage Tabsdata collections"
+sidebarTitle: "collection"
+description: "Create, inspect, update, delete, and pin Tabsdata collections, and manage cross-collection read permissions from the CLI."
+---
+
+Collections are the top-level organizational unit in Tabsdata — every function and table belongs to exactly one collection. The `td collection` command group lets you create and manage collections, grant one collection permission to read the tables of another, and pin a collection so that subsequent commands automatically use it as the default.
+
+## Subcommands
+
+### `td collection create`
+
+Create a new collection.
+
+```bash
+td collection create --name <name> [--description <desc>]
+```
+
+**Flags**
+
+| Flag | Short | Required | Description |
+|------|-------|----------|-------------|
+| `--name` | `-n` | Yes* | Name of the collection to create. Uses the pinned collection if omitted. |
+| `--description` | | No | Human-readable description. Defaults to empty string. |
+
+**Example**
+
+```bash
+td collection create --name analytics --description "Analytics data lake"
+```
+
+---
+
+### `td collection delete`
+
+Delete a collection by name. Requires explicit confirmation.
+
+```bash
+td collection delete --name <name> --confirm delete
+```
+
+**Flags**
+
+| Flag | Short | Required | Description |
+|------|-------|----------|-------------|
+| `--name` | `-n` | Yes* | Name of the collection to delete. |
+| `--confirm` | | Yes* | Must be the literal string `delete`. Prompted if omitted. |
+
+**Example**
+
+```bash
+td collection delete --name old-analytics --confirm delete
+```
+
+---
+
+### `td collection info`
+
+Display details of a single collection.
+
+```bash
+td collection info --name <name>
+```
+
+**Flags**
+
+| Flag | Short | Required | Description |
+|------|-------|----------|-------------|
+| `--name` | `-n` | Yes* | Name of the collection to inspect. |
+
+Prints a table with columns: **Name**, **Description**, **Created on**, **Created by**.
+
+**Example**
+
+```bash
+td collection info --name analytics
+```
+
+---
+
+### `td collection list`
+
+List all collections visible to the authenticated user.
+
+```bash
+td collection list
+```
+
+Prints a table with columns: **Name**, **Description**, **Created on**, **Created by**.
+
+**Example**
+
+```bash
+td collection list
+```
+
+---
+
+### `td collection update`
+
+Update the name and/or description of a collection.
+
+```bash
+td collection update --name <name> [--new-name <new-name>] [--description <desc>]
+```
+
+**Flags**
+
+| Flag | Short | Required | Description |
+|------|-------|----------|-------------|
+| `--name` | `-n` | Yes* | Current name of the collection. |
+| `--new-name` | | No | New name to assign. |
+| `--description` | | No | New description. |
+
+**Example**
+
+```bash
+td collection update --name analytics --new-name analytics-v2 \
+  --description "Revised analytics collection"
+```
+
+---
+
+### `td collection pin`
+
+Set a collection as the default for the current CLI session. After pinning, any command that accepts `--coll` will use the pinned collection automatically if the flag is omitted.
+
+```bash
+td collection pin --name <name>
+```
+
+**Flags**
+
+| Flag | Short | Required | Description |
+|------|-------|----------|-------------|
+| `--name` | `-n` | Yes* | Name of the collection to pin. |
+
+**Example**
+
+```bash
+td collection pin --name analytics
+
+# Now all fn, table, etc. commands default to "analytics"
+td fn list
+td table list
+```
+
+---
+
+### `td collection unpin`
+
+Clear the currently pinned collection.
+
+```bash
+td collection unpin
+```
+
+**Example**
+
+```bash
+td collection unpin
+```
+
+---
+
+### `td collection add_perm`
+
+Grant one collection permission to read the tables of another collection. This is used for cross-collection data subscriptions.
+
+```bash
+td collection add_perm --name <source-coll> --to-coll <target-coll>
+```
+
+**Flags**
+
+| Flag | Short | Required | Description |
+|------|-------|----------|-------------|
+| `--name` | `-n` | Yes* | The collection that will receive the read permission. |
+| `--to-coll` | `-t` | Yes* | The collection whose tables will be made readable. |
+
+On success, the command prints the generated permission ID.
+
+**Example**
+
+```bash
+# Allow "reporting" to read tables from "analytics"
+td collection add_perm --name reporting --to-coll analytics
+```
+
+---
+
+### `td collection delete_perm`
+
+Remove a cross-collection read permission. You can identify the permission by target collection name (`--to-coll`) or by its UUID (`--id`). These two options are mutually exclusive.
+
+```bash
+td collection delete_perm --name <source-coll> --to-coll <target-coll>
+# or
+td collection delete_perm --name <source-coll> --id <permission-id>
+```
+
+**Flags**
+
+| Flag | Short | Required | Description |
+|------|-------|----------|-------------|
+| `--name` | `-n` | Yes* | Collection from which the permission is removed. |
+| `--to-coll` | `-t` | No | Target collection of the permission to remove. Mutually exclusive with `--id`. |
+| `--id` | | No | UUID of the specific permission to remove. Mutually exclusive with `--to-coll`. |
+
+**Example**
+
+```bash
+td collection delete_perm --name reporting --to-coll analytics
+```
+
+---
+
+### `td collection list_perm`
+
+List all cross-collection read permissions that belong to a collection.
+
+```bash
+td collection list_perm --name <name>
+```
+
+**Flags**
+
+| Flag | Short | Required | Description |
+|------|-------|----------|-------------|
+| `--name` | `-n` | Yes* | Name of the collection whose permissions are listed. |
+
+Prints a table with columns: **ID**, **To collection**, **Granted on**, **Granted by**.
+
+**Example**
+
+```bash
+td collection list_perm --name reporting
+```
+
+---
+
+<Note>
+All subcommands that accept `--name` will fall back to the currently pinned collection (set with `td collection pin`) when the flag is omitted. This lets you omit `--name` for the whole session once you have pinned a collection.
+</Note>

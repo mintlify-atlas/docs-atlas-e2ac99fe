@@ -1,0 +1,525 @@
+---
+title: "td status, login, logout: server connection commands"
+sidebarTitle: "Server"
+description: "Authenticate to a Tabsdata server with td login/logout/status, then manage executions, stage and cron workers, examples, and build metadata."
+---
+
+Before you can use most `td` commands, you must establish an authenticated session with a running Tabsdata server. The three core connection commands — `td login`, `td logout`, and `td status` — handle session lifecycle. This page also covers execution management (`td exe`), worker management (`td stage` and `td cron`), the examples generator, and informational commands (`td about`, `td info`, `td hints`).
+
+## Session commands
+
+### `td login`
+
+Authenticate to a Tabsdata server and save credentials locally. All subsequent commands reuse the saved session until you call `td logout`.
+
+```bash
+td login --server <url> --user <username> --password <password> [--role <role>]
+```
+
+**Flags**
+
+| Flag | Short | Required | Description |
+|------|-------|----------|-------------|
+| `--server` | `-s` | Yes* | URL of the Tabsdata server (e.g. `https://myserver:8080`). |
+| `--user` | `-u` | Yes* | Username for authentication. |
+| `--password` | `-p` | Yes* | Password. Discouraged as a plain argument — prefer the interactive prompt or an environment variable. |
+| `--role` | `-r` | No* | Role to assume. Defaults to `user` when prompted. |
+
+\* Prompted interactively if omitted and `--no-prompt` is not set.
+
+**Example**
+
+```bash
+# Interactive login (recommended)
+td login
+
+# Non-interactive login
+td login \
+  --server https://tabsdata.example.com:8080 \
+  --user admin \
+  --password s3cr3t \
+  --role admin
+```
+
+---
+
+### `td logout`
+
+End the current session, delete locally cached credentials, and clear any pinned objects.
+
+```bash
+td logout
+```
+
+**Example**
+
+```bash
+td logout
+```
+
+---
+
+### `td status`
+
+Check the health and operational status of the connected Tabsdata server.
+
+```bash
+td status
+```
+
+**Example**
+
+```bash
+td status
+```
+
+---
+
+## Execution management — `td exe`
+
+The `td exe` group lets you inspect and manage execution plans, transactions, function runs, and workers. A **plan** is created each time a function is triggered; a **transaction** groups the writes that result from a plan.
+
+### `td exe info`
+
+Display details of a single plan by its ID.
+
+```bash
+td exe info --plan <plan-id>
+```
+
+**Flags**
+
+| Flag | Required | Description |
+|------|----------|-------------|
+| `--plan` | Yes* | ID of the plan to display. |
+
+**Example**
+
+```bash
+td exe info --plan a1b2c3d4-e5f6-...
+```
+
+---
+
+### `td exe list_plan`
+
+List execution plans, with optional filters. Supports real-time monitoring.
+
+```bash
+td exe list_plan [--status <status>...] [--fn <fn>] [--coll <coll>] \
+  [--name <wildcard>] [--last] [--at <time>] [--monitor]
+```
+
+**Flags**
+
+| Flag | Short | Description |
+|------|-------|-------------|
+| `--status` | | Filter by status (repeatable). Case-insensitive. |
+| `--fn` | | Filter by function name. |
+| `--coll` | | Filter by collection name. |
+| `--name` / `-n` | | Wildcard match on plan name (e.g. `my_plan*`). |
+| `--last` | | Show only the most recent plan. |
+| `--at` | | Show only plans triggered before this time. Accepts unix ms or date-time formats. |
+| `--monitor` | | Watch plans live until they all reach a final state. |
+
+**Example**
+
+```bash
+td exe list_plan --coll analytics
+td exe list_plan --last --monitor
+td exe list_plan --status failed
+```
+
+---
+
+### `td exe list_trx`
+
+List transactions with optional filters.
+
+```bash
+td exe list_trx [--status <status>...] [--coll <coll>] \
+  [--plan-name <wildcard>] [--plan <plan-id>] [--last] [--at <time>] [--monitor]
+```
+
+**Flags**
+
+| Flag | Description |
+|------|-------------|
+| `--status` | Filter by status (repeatable). |
+| `--coll` | Filter by collection. |
+| `--plan-name` | Wildcard filter on the originating plan name. Mutually exclusive with `--plan`. |
+| `--plan` | Filter by exact plan ID. Mutually exclusive with `--plan-name`. |
+| `--last` | Show only the most recent transaction. |
+| `--at` | Show transactions triggered before this time. |
+| `--monitor` | Watch transactions live until they all reach a final state. |
+
+**Example**
+
+```bash
+td exe list_trx --coll analytics --last
+```
+
+---
+
+### `td exe list_fn_run`
+
+List function runs for a given plan, function, or transaction.
+
+```bash
+td exe list_fn_run [--status <status>...] [--plan <plan-id>] \
+  [--plan-name <wildcard>] [--fn <fn>] [--coll <coll>] [--trx <trx-id>]
+```
+
+**Flags**
+
+| Flag | Description |
+|------|-------------|
+| `--status` | Filter by status (repeatable). |
+| `--plan` | Filter by plan ID. Mutually exclusive with `--plan-name`, `--fn`, `--trx`. |
+| `--plan-name` | Wildcard match on plan name. Mutually exclusive with `--plan`. |
+| `--fn` | Filter by function name (requires `--coll`). Mutually exclusive with `--plan`, `--trx`. |
+| `--coll` | Collection of the function. |
+| `--trx` | Filter by transaction ID. Mutually exclusive with `--plan`, `--fn`. |
+
+**Example**
+
+```bash
+td exe list_fn_run --plan a1b2c3d4
+td exe list_fn_run --fn load_sales --coll analytics
+```
+
+---
+
+### `td exe list_worker`
+
+List workers associated with a plan, function run, or transaction.
+
+```bash
+td exe list_worker [--status <status>...] [--plan <plan-id>] \
+  [--fn <fn>] [--fn-run <fn-run-id>] [--coll <coll>] [--trx <trx-id>]
+```
+
+**Flags**
+
+| Flag | Description |
+|------|-------------|
+| `--status` | Filter by status (repeatable). |
+| `--plan` | Filter by plan ID. |
+| `--plan-name` | Wildcard match on plan name. Mutually exclusive with `--plan`. |
+| `--fn` | Filter by function name (requires `--coll`). |
+| `--fn-run` | Filter by function run ID. |
+| `--coll` | Collection of the function. |
+| `--trx` | Filter by transaction ID. |
+
+**Example**
+
+```bash
+td exe list_worker --plan a1b2c3d4
+```
+
+---
+
+### `td exe logs`
+
+Retrieve logs generated by a worker. You can identify the worker directly with `--worker`, or use any combination of plan/function/transaction filters to select from a list interactively.
+
+```bash
+td exe logs --worker <worker-id> [--file <path>]
+# or
+td exe logs --plan <plan-id> [--file <path>]
+td exe logs --fn <fn> --coll <coll> [--file <path>]
+```
+
+**Flags**
+
+| Flag | Description |
+|------|-------------|
+| `--worker` | ID of a specific worker. Mutually exclusive with all filter flags. |
+| `--file` | Save logs to this file path instead of printing to stdout. |
+| `--plan` | Filter workers by plan ID. |
+| `--plan-name` | Wildcard match on plan name. Mutually exclusive with `--plan`. |
+| `--fn` | Filter by function name. Requires `--coll`. |
+| `--fn-run` | Filter by function run ID. |
+| `--coll` | Collection of the function. |
+| `--trx` | Filter by transaction ID. |
+| `--status` | Filter workers by status (repeatable). |
+
+**Example**
+
+```bash
+td exe logs --worker w1b2c3d4
+td exe logs --plan a1b2c3d4 --file /tmp/plan-logs.txt
+```
+
+---
+
+### `td exe monitor`
+
+Watch a plan or transaction in real time until it reaches a final state.
+
+```bash
+td exe monitor --plan <plan-id>
+# or
+td exe monitor --trx <trx-id>
+```
+
+**Flags**
+
+| Flag | Short | Description |
+|------|-------|-------------|
+| `--plan` | | ID of the plan to monitor. Mutually exclusive with `--trx`. |
+| `--trx` | `-t` | ID of the transaction to monitor. Mutually exclusive with `--plan`. |
+
+**Example**
+
+```bash
+td exe monitor --plan a1b2c3d4
+```
+
+---
+
+### `td exe cancel`
+
+Cancel a running plan or transaction.
+
+```bash
+td exe cancel --plan <plan-id>
+# or
+td exe cancel --trx <trx-id>
+```
+
+**Example**
+
+```bash
+td exe cancel --plan a1b2c3d4
+```
+
+---
+
+### `td exe recover`
+
+Attempt to recover a failed or stuck plan or transaction.
+
+```bash
+td exe recover --plan <plan-id>
+# or
+td exe recover --trx <trx-id>
+```
+
+**Example**
+
+```bash
+td exe recover --trx t1b2c3d4
+```
+
+---
+
+## Stage worker management — `td stage`
+
+Stage workers execute the data-transformation stages of a function. Use `td stage` to start, stop, and list them.
+
+### `td stage start`
+
+Start the stage worker for a function.
+
+```bash
+td stage start --name <fn-name> --coll <coll>
+```
+
+| Flag | Short | Description |
+|------|-------|-------------|
+| `--name` | `-n` | Name of the function whose stage worker to start. |
+| `--coll` | `-c` | Collection the function belongs to. |
+
+**Example**
+
+```bash
+td stage start --name load_sales --coll analytics
+```
+
+---
+
+### `td stage stop`
+
+Stop the stage worker for a function.
+
+```bash
+td stage stop --name <fn-name> --coll <coll>
+```
+
+**Example**
+
+```bash
+td stage stop --name load_sales --coll analytics
+```
+
+---
+
+### `td stage list`
+
+List all stage workers, with optional filters.
+
+```bash
+td stage list [--status <status>...] [--coll <coll>] [--state enabled|disabled]
+```
+
+| Flag | Description |
+|------|-------------|
+| `--status` | Filter by worker status (repeatable, case-insensitive). |
+| `--coll` | Filter by collection. |
+| `--state` | Filter by enabled/disabled state (`enabled` or `disabled`). |
+
+**Example**
+
+```bash
+td stage list --coll analytics --state enabled
+```
+
+---
+
+## Cron trigger management — `td cron`
+
+Cron workers fire function triggers according to the cron schedule defined in the function decorator. Use `td cron` to start, stop, and list them.
+
+### `td cron start`
+
+Start the cron worker for a function.
+
+```bash
+td cron start --name <fn-name> --coll <coll>
+```
+
+| Flag | Short | Description |
+|------|-------|-------------|
+| `--name` | `-n` | Name of the function whose cron worker to start. |
+| `--coll` | `-c` | Collection the function belongs to. |
+
+**Example**
+
+```bash
+td cron start --name load_sales --coll analytics
+```
+
+---
+
+### `td cron stop`
+
+Stop the cron worker for a function.
+
+```bash
+td cron stop --name <fn-name> --coll <coll>
+```
+
+**Example**
+
+```bash
+td cron stop --name load_sales --coll analytics
+```
+
+---
+
+### `td cron list`
+
+List all cron workers, with optional filters.
+
+```bash
+td cron list [--status <status>...] [--coll <coll>] [--state enabled|disabled]
+```
+
+| Flag | Description |
+|------|-------------|
+| `--status` | Filter by worker status (repeatable, case-insensitive). |
+| `--coll` | Filter by collection. |
+| `--state` | Filter by enabled/disabled state. |
+
+**Example**
+
+```bash
+td cron list --state disabled
+```
+
+---
+
+## Examples generator — `td examples`
+
+Generate a local folder of example use cases and/or open the accompanying guide in your browser.
+
+```bash
+td examples --dir <path>
+td examples --guide
+td examples --dir <path> --guide
+```
+
+**Flags**
+
+| Flag | Short | Description |
+|------|-------|-------------|
+| `--dir` | `-d` | Path to a **new** directory where examples will be written. The directory must not already exist. |
+| `--guide` | `-g` | Flag. Open the examples walkthrough guide in your default browser. |
+
+**Example**
+
+```bash
+# Generate examples and open the guide
+td examples --dir ./my-examples --guide
+
+# Open the guide only
+td examples --guide
+```
+
+---
+
+## Build metadata — `td about`
+
+Display build metadata, the installed package version, and system information.
+
+```bash
+td about
+```
+
+---
+
+## License and dependency information — `td info`
+
+Show the software license, third-party dependency list, and/or release notes for the installed version.
+
+```bash
+td info [--license] [--third-party] [--release-notes]
+```
+
+**Flags**
+
+| Flag | Description |
+|------|-------------|
+| `--license` | Print the full software license. |
+| `--third-party` | Print the third-party dependency list. |
+| `--release-notes` | Print the release notes for the current version. |
+
+**Example**
+
+```bash
+td info --license
+td info --third-party
+td info --release-notes
+```
+
+---
+
+## CLI hints — `td hints`
+
+Toggle contextual hints that the CLI displays after certain commands.
+
+```bash
+td hints on
+td hints off
+```
+
+**Example**
+
+```bash
+# Enable hints
+td hints on
+
+# Disable hints
+td hints off
+```

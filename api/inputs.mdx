@@ -1,0 +1,454 @@
+---
+title: "Input source classes for Tabsdata publishers"
+sidebarTitle: "Inputs"
+description: "Reference for all input source classes—file sources, SQL sources, and table inputs—used in the source parameter of the @td.publisher decorator."
+---
+
+Input source classes tell the `@td.publisher` decorator where to read data from before passing it into your function as `TableFrame` arguments. Every source is a subclass of `SourcePlugin`. Tabsdata ships with built-in support for local files, AWS S3, Azure Blob Storage, Google Cloud Storage, and several SQL databases.
+
+<Note>
+All source classes are importable directly from `tabsdata`: `from tabsdata import S3Source` or `import tabsdata as td; td.S3Source(...)`.
+</Note>
+
+---
+
+## File sources
+
+File sources read tabular data from the local filesystem or cloud object storage. If `format` is omitted the format is inferred from the file extension.
+
+### `LocalFileSource`
+
+Read data from the local filesystem. Useful for development, on-premise deployments, or when the Tabsdata server has access to a mounted network share.
+
+```python
+import tabsdata as td
+
+source = td.LocalFileSource(
+    path="/data/sales/*.csv",
+    format=td.CSVFormat(separator=","),
+)
+```
+
+<ParamField path="path" type="str | list[str]" required>
+  Absolute path or glob pattern to the file(s) to read. Pass a list to read
+  multiple paths as separate inputs to the function.
+</ParamField>
+
+<ParamField path="format" type="str | FileFormat" default="inferred from extension">
+  The file format. Accepts a format string (`"csv"`, `"parquet"`, `"avro"`,
+  `"ndjson"`, `"jsonl"`, `"log"`) or a `FileFormat` object. If omitted, the
+  format is inferred from the file extension.
+</ParamField>
+
+<ParamField path="initial_last_modified" type="str | datetime" default="None">
+  ISO 8601 datetime string or `datetime` object. Only files modified **after**
+  this timestamp are processed. On subsequent runs the offset is tracked
+  automatically.
+</ParamField>
+
+<ParamField path="file_info" type="str | FileInfo | None" default="None">
+  Add origin file metadata as system columns. `"name"` adds the file name;
+  `"uri"` adds the full file URI.
+</ParamField>
+
+---
+
+### `S3Source`
+
+Read data from an Amazon S3 bucket.
+
+```python
+source = td.S3Source(
+    uri="s3://my-bucket/data/events/*.parquet",
+    credentials=td.S3AccessKeyCredentials(
+        aws_access_key_id=td.EnvironmentSecret("AWS_KEY_ID"),
+        aws_secret_access_key=td.EnvironmentSecret("AWS_SECRET"),
+    ),
+    region="us-east-1",
+)
+```
+
+<ParamField path="uri" type="str | list[str]" required>
+  S3 URI(s) with the scheme `s3://`. Glob patterns (`*`, `?`) are supported.
+</ParamField>
+
+<ParamField path="credentials" type="S3Credentials" required>
+  AWS credentials. Use `S3AccessKeyCredentials` for access-key-based auth.
+  See [Credentials](/api/credentials).
+</ParamField>
+
+<ParamField path="format" type="str | FileFormat" default="inferred">
+  File format. Supported: `"csv"`, `"parquet"`, `"avro"`, `"ndjson"`, `"log"`.
+</ParamField>
+
+<ParamField path="initial_last_modified" type="str | datetime" default="None">
+  Only process files modified after this timestamp.
+</ParamField>
+
+<ParamField path="region" type="str" default="None">
+  AWS region of the S3 bucket, e.g. `"eu-west-1"`. If omitted the default
+  region from the environment is used.
+</ParamField>
+
+<ParamField path="file_info" type="str | FileInfo | None" default="None">
+  Add file origin metadata as system columns (`"name"` or `"uri"`).
+</ParamField>
+
+---
+
+### `AzureSource`
+
+Read data from Azure Blob Storage.
+
+```python
+source = td.AzureSource(
+    uri="az://my-container/exports/2024/*.csv",
+    credentials=td.AzureAccountKeyCredentials(
+        account_name=td.EnvironmentSecret("AZURE_ACCOUNT"),
+        account_key=td.EnvironmentSecret("AZURE_KEY"),
+    ),
+    format=td.CSVFormat(),
+)
+```
+
+<ParamField path="uri" type="str | list[str]" required>
+  Azure Blob URI(s) using the `az://` scheme.
+</ParamField>
+
+<ParamField path="credentials" type="AzureCredentials" required>
+  Azure credentials. Use `AzureAccountKeyCredentials`. See [Credentials](/api/credentials).
+</ParamField>
+
+<ParamField path="format" type="str | FileFormat" default="inferred">
+  Supported formats: `"csv"`, `"parquet"`, `"avro"`, `"ndjson"`, `"log"`.
+</ParamField>
+
+<ParamField path="initial_last_modified" type="str | datetime" default="None">
+  Only process files modified after this timestamp.
+</ParamField>
+
+<ParamField path="file_info" type="str | FileInfo | None" default="None">
+  Inject file origin metadata columns.
+</ParamField>
+
+---
+
+### `GCSSource`
+
+Read data from Google Cloud Storage.
+
+```python
+source = td.GCSSource(
+    uri="gs://my-bucket/data/*.parquet",
+    credentials=td.GCPServiceAccountKeyCredentials(
+        service_account_key=td.EnvironmentSecret("GCP_SERVICE_ACCOUNT_JSON"),
+    ),
+)
+```
+
+<ParamField path="uri" type="str | list[str]" required>
+  GCS URI(s) using the `gs://` scheme.
+</ParamField>
+
+<ParamField path="credentials" type="GCPCredentials" required>
+  GCP credentials. Use `GCPServiceAccountKeyCredentials`. See [Credentials](/api/credentials).
+</ParamField>
+
+<ParamField path="format" type="str | FileFormat" default="inferred">
+  Supported formats: `"csv"`, `"parquet"`, `"avro"`, `"ndjson"`, `"log"`.
+</ParamField>
+
+<ParamField path="initial_last_modified" type="str | datetime" default="None">
+  Only process files modified after this timestamp.
+</ParamField>
+
+<ParamField path="file_info" type="str | FileInfo | None" default="None">
+  Inject file origin metadata columns.
+</ParamField>
+
+---
+
+## SQL sources
+
+SQL sources execute one or more queries against a relational database and return each result set as a `TableFrame` argument to the publisher function.
+
+<Note>
+The `MySQLSource`, `PostgresSource`, `OracleSource`, and `MariaDBSource` classes are **deprecated** since version 1.6.0. They continue to work but new code should prefer the newer `MySQLSrc`, `PostgresSrc`, `OracleSrc`, and `MariaDBSrc` classes available in the connector packages.
+</Note>
+
+### `MySQLSource` *(deprecated)*
+
+```python
+source = td.MySQLSource(
+    uri="mysql://my-db-host:3306/mydb",
+    query="SELECT * FROM events WHERE created_at > :last_run",
+    credentials=td.UserPasswordCredentials(
+        user=td.EnvironmentSecret("DB_USER"),
+        password=td.EnvironmentSecret("DB_PASS"),
+    ),
+    initial_values={"last_run": "2024-01-01"},
+)
+```
+
+<ParamField path="uri" type="str" required>
+  MySQL connection URI with scheme `mysql://`.
+</ParamField>
+
+<ParamField path="query" type="str | list[str]" required>
+  SQL query or list of queries. Each query produces one `TableFrame` argument
+  passed to the publisher function in order.
+</ParamField>
+
+<ParamField path="credentials" type="UserPasswordCredentials | None" default="None">
+  Database credentials. See [Credentials](/api/credentials).
+</ParamField>
+
+<ParamField path="initial_values" type="dict | None" default="None">
+  Mapping of placeholder names to initial values used in parameterized queries
+  (`:placeholder` syntax). Values are tracked across runs for incremental loads.
+</ParamField>
+
+---
+
+### `PostgresSource` *(deprecated)*
+
+```python
+source = td.PostgresSource(
+    uri="postgresql://my-pg-host:5432/mydb",
+    query=["SELECT * FROM orders", "SELECT * FROM customers"],
+    credentials=td.UserPasswordCredentials(
+        user=td.EnvironmentSecret("PG_USER"),
+        password=td.EnvironmentSecret("PG_PASS"),
+    ),
+)
+```
+
+<ParamField path="uri" type="str" required>
+  PostgreSQL connection URI. Schemes `postgresql://` and `postgres://` are both accepted.
+</ParamField>
+
+<ParamField path="query" type="str | list[str]" required>
+  SQL query or list of queries.
+</ParamField>
+
+<ParamField path="credentials" type="UserPasswordCredentials | None" default="None">
+  Database credentials.
+</ParamField>
+
+<ParamField path="initial_values" type="dict | None" default="None">
+  Initial values for query placeholders.
+</ParamField>
+
+---
+
+### `OracleSource` *(deprecated)*
+
+```python
+source = td.OracleSource(
+    uri="oracle://my-oracle-host:1521/orcl",
+    query="SELECT * FROM sales WHERE rownum <= 10000",
+    credentials=td.UserPasswordCredentials(
+        user=td.EnvironmentSecret("ORA_USER"),
+        password=td.EnvironmentSecret("ORA_PASS"),
+    ),
+)
+```
+
+<ParamField path="uri" type="str" required>
+  Oracle connection URI with scheme `oracle://`.
+</ParamField>
+
+<ParamField path="query" type="str | list[str]" required>
+  SQL query or list of queries.
+</ParamField>
+
+<ParamField path="credentials" type="UserPasswordCredentials | None" default="None">
+  Database credentials.
+</ParamField>
+
+<ParamField path="initial_values" type="dict | None" default="None">
+  Initial values for query placeholders.
+</ParamField>
+
+---
+
+### `MariaDBSource` *(deprecated)*
+
+```python
+source = td.MariaDBSource(
+    uri="mariadb://my-mariadb-host:3306/mydb",
+    query="SELECT id, name, value FROM metrics",
+    credentials=td.UserPasswordCredentials(
+        user=td.EnvironmentSecret("MARIADB_USER"),
+        password=td.EnvironmentSecret("MARIADB_PASS"),
+    ),
+)
+```
+
+<ParamField path="uri" type="str" required>
+  MariaDB connection URI with scheme `mariadb://`.
+</ParamField>
+
+<ParamField path="query" type="str | list[str]" required>
+  SQL query or list of queries.
+</ParamField>
+
+<ParamField path="credentials" type="UserPasswordCredentials | None" default="None">
+  Database credentials.
+</ParamField>
+
+<ParamField path="initial_values" type="dict | None" default="None">
+  Initial values for query placeholders.
+</ParamField>
+
+---
+
+## Table input
+
+### `TableInput`
+
+Used by `@td.transformer` and `@td.subscriber` to declare which Tabsdata tables a function reads from. You rarely construct this directly—passing a string or list of strings to `input_tables` / `tables` creates one automatically.
+
+```python
+import tabsdata as td
+
+inp = td.TableInput("my_collection/my_table")
+# or
+inp = td.TableInput(["collection/table_a", "collection/table_b"])
+```
+
+<ParamField path="table" type="str | list[str]" required>
+  Fully qualified Tabsdata table name(s) in the form `"collection/table"`.
+  Pass a list to subscribe to multiple tables simultaneously.
+</ParamField>
+
+---
+
+## File formats
+
+File format objects control how files are parsed on input and serialized on output. Pass them to the `format` parameter of any file source or destination.
+
+### `CSVFormat`
+
+```python
+td.CSVFormat(
+    separator=",",
+    quote_char='"',
+    eol_char="\n",
+    input_has_header=True,
+    input_encoding="Utf8",
+    input_null_values=None,
+    input_missing_is_null=True,
+    input_skip_rows=0,
+    input_try_parse_dates=False,
+    output_include_header=True,
+)
+```
+
+<Expandable title="All CSVFormat parameters">
+
+<ParamField path="separator" type="str | int" default='","'>
+  Column delimiter character.
+</ParamField>
+
+<ParamField path="quote_char" type="str | int" default='"'>
+  Character used to quote fields.
+</ParamField>
+
+<ParamField path="eol_char" type="str | int" default='"\n"'>
+  End-of-line character.
+</ParamField>
+
+<ParamField path="input_encoding" type="str" default='"Utf8"'>
+  File encoding for reads. Common values: `"Utf8"`, `"LossyUtf8"`.
+</ParamField>
+
+<ParamField path="input_null_values" type="list | None" default="None">
+  List of strings that should be treated as null on read.
+</ParamField>
+
+<ParamField path="input_missing_is_null" type="bool" default="True">
+  Treat missing (empty) fields as null.
+</ParamField>
+
+<ParamField path="input_truncate_ragged_lines" type="bool" default="False">
+  Silently truncate lines with too many fields rather than raising an error.
+</ParamField>
+
+<ParamField path="input_has_header" type="bool" default="True">
+  Whether the first line of the file is a header row.
+</ParamField>
+
+<ParamField path="input_skip_rows" type="int" default="0">
+  Number of rows to skip before reading.
+</ParamField>
+
+<ParamField path="input_try_parse_dates" type="bool" default="False">
+  Attempt to parse string columns as dates automatically.
+</ParamField>
+
+<ParamField path="output_include_header" type="bool" default="True">
+  Include a header row when writing CSV.
+</ParamField>
+
+<ParamField path="output_null_value" type="str | None" default="None">
+  String to write for null values (defaults to empty string).
+</ParamField>
+
+</Expandable>
+
+---
+
+### `ParquetFormat`
+
+Apache Parquet format. No configuration parameters—pass the class directly or instantiate it.
+
+```python
+td.ParquetFormat()
+```
+
+---
+
+### `NDJSONFormat`
+
+Newline-delimited JSON (also accepted as `"jsonl"` string alias).
+
+```python
+td.NDJSONFormat()
+```
+
+---
+
+### `AvroFormat`
+
+Apache Avro format. Supports chunked reading/writing for large files.
+
+```python
+td.AvroFormat(chunk_size=50000)
+```
+
+<ParamField path="chunk_size" type="int" default="50000">
+  Number of records per read/write chunk when converting Avro files.
+</ParamField>
+
+---
+
+### `LogFormat`
+
+Plain-text log format, parsed as single-column string data.
+
+```python
+td.LogFormat()
+```
+
+---
+
+## Related pages
+
+- [Decorators](/api/decorators) — `@td.publisher`, `@td.transformer`, `@td.subscriber`
+- [Outputs](/api/outputs) — destination plugin constructors
+- [Credentials](/api/credentials) — authentication classes
+- [Secrets](/api/secrets) — `EnvironmentSecret`, `HashiCorpSecret`
+- [Connectors: File Storage](/connectors/file-storage)
+- [Connectors: Databases](/connectors/databases)
+- [Publishing data](/guides/publishing-data)

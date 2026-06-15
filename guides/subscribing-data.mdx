@@ -1,0 +1,174 @@
+---
+title: "Subscribe to Tabsdata tables and export to destinations"
+sidebarTitle: "Subscribing"
+description: "Define subscriber functions that watch Tabsdata tables and automatically export their contents to files, object stores, or SQL databases."
+---
+
+Subscribers are the exit point for data in Tabsdata. A subscriber function watches one or more Tabsdata tables and, whenever those tables are updated, exports their contents to an external destination — a local file, a cloud bucket, or a relational database. Subscribers are the mirror image of publishers: where a publisher reads from the outside world and writes into Tabsdata, a subscriber reads from Tabsdata and writes to the outside world. They are decorated with `@td.subscriber`, which wires the input tables and the export destination together declaratively.
+
+## The `@td.subscriber` decorator
+
+```python
+@td.subscriber(
+    tables,
+    destination,
+    name=None,
+    trigger_by=ALL_DEPS,
+)
+```
+
+<ParamField path="tables" type="str | list[str]" required>
+  The Tabsdata table name(s) to subscribe to. Each name maps positionally to a function parameter of type `td.TableFrame`.
+</ParamField>
+
+<ParamField path="destination" type="LocalFileDestination | S3Destination | AzureDestination | GCSDestination | MySQLDestination | PostgresDestination | OracleDestination | MariaDBDestination | DestinationPlugin" required>
+  Where to write the subscriber's output. Use a file destination class for object stores and local paths, or a SQL destination class for relational databases.
+</ParamField>
+
+<ParamField path="name" type="str" default="function name">
+  An optional override for the registered function name. When omitted, Tabsdata uses the Python function name.
+</ParamField>
+
+<ParamField path="trigger_by" type="ALL_DEPS | list[str] | CronTrigger | None" default="ALL_DEPS">
+  Controls what causes the subscriber to run:
+
+  - `ALL_DEPS` (default) — run whenever **any** of the subscribed tables is updated.
+  - A list of table names — run only when one of those specific tables is updated.
+  - A `CronTrigger` — run on a cron schedule.
+  - `None` — only triggered manually via `td fn trigger`.
+</ParamField>
+
+<Note>
+  Unlike transformers, subscribers write to **external systems**, not back into Tabsdata tables. If you want to write results to another Tabsdata table, use `@td.transformer` instead.
+</Note>
+
+## Examples
+
+### Export to local JSONL files
+
+The subscriber from example-000 listens to the `spanish` and `french` tables and writes each one to a separate JSONL file on disk. Multiple input tables map positionally to multiple destination paths.
+
+```python
+import os
+import tabsdata as td
+
+
+@td.subscriber(
+    tables=["spanish", "french"],
+    destination=td.LocalFileDestination([
+        os.path.join(os.getcwd(), "output", "spanish.jsonl"),
+        os.path.join(os.getcwd(), "output", "french.jsonl"),
+    ]),
+)
+def sub(
+    spanish: td.TableFrame, french: td.TableFrame
+) -> (td.TableFrame, td.TableFrame):
+    return spanish, french
+```
+
+`LocalFileDestination` infers the output format from the file extension. Supported formats are `csv`, `parquet`, `avro`, and `ndjson` / `jsonl`.
+
+### Export to Amazon S3
+
+Use `S3Destination` to push data directly into an S3 bucket. Credentials accept any `Secret` subclass, keeping keys out of source code.
+
+```python
+import tabsdata as td
+
+
+@td.subscriber(
+    tables="enriched_orders",
+    destination=td.S3Destination(
+        uri="s3://my-bucket/exports/orders_$EXPORT_TIMESTAMP.parquet",
+        credentials=td.S3AccessKeyCredentials(
+            aws_access_key_id=td.EnvironmentSecret("AWS_ACCESS_KEY_ID"),
+            aws_secret_access_key=td.EnvironmentSecret("AWS_SECRET_ACCESS_KEY"),
+        ),
+        region="eu-west-1",
+    ),
+    trigger_by=td.CronTrigger("0 3 * * *"),  # nightly at 03:00 UTC
+)
+def export_to_s3(orders: td.TableFrame) -> td.TableFrame:
+    return orders
+```
+
+<Tip>
+  URI path placeholders like `$EXPORT_TIMESTAMP`, `$EXECUTION_ID`, and `$TRANSACTION_ID` are replaced at runtime, making it easy to write timestamped files without extra logic in your function.
+</Tip>
+
+### Export to PostgreSQL
+
+SQL destinations write each returned frame into a database table. Pass `if_table_exists="replace"` to overwrite the table each run, or `"append"` (the default) to accumulate rows.
+
+```python
+import tabsdata as td
+
+
+@td.subscriber(
+    tables=["spanish", "french", "german"],
+    destination=td.PostgresDestination(
+        uri="postgresql://db.example.com:5432/analytics",
+        destination_table=["tbl_spanish", "tbl_french", "tbl_german"],
+        credentials=td.UserPasswordCredentials(
+            user="writer",
+            password=td.EnvironmentSecret("PG_PASSWORD"),
+        ),
+        if_table_exists="replace",
+    ),
+)
+def export_to_pg(
+    spanish: td.TableFrame,
+    french: td.TableFrame,
+    german: td.TableFrame,
+) -> (td.TableFrame, td.TableFrame, td.TableFrame):
+    return spanish, french, german
+```
+
+<Note>
+  `MySQLDestination`, `PostgresDestination`, `OracleDestination`, and `MariaDBDestination` all share the same interface. Switch the class and update the URI scheme to change the target database.
+</Note>
+
+## Registering and triggering a subscriber
+
+<Steps>
+  <Step title="Register the function">
+    Register the subscriber into a collection with `td fn register`.
+
+    ```bash
+    td fn register --coll my-collection --path subscriber.py
+    ```
+  </Step>
+  <Step title="Trigger a manual run">
+    Force a run immediately, bypassing the normal trigger logic.
+
+    ```bash
+    td fn trigger --coll my-collection --name sub
+    ```
+  </Step>
+  <Step title="Automatic triggering">
+    In a running Tabsdata server, subscribers are triggered automatically whenever their upstream tables receive new data — no extra orchestration needed.
+  </Step>
+</Steps>
+
+## Supported destinations
+
+<CardGroup cols={2}>
+  <Card title="Local Files" icon="folder-open" href="connectors/file-storage">
+    `LocalFileDestination` — CSV, Parquet, Avro, and NDJSON files on the local filesystem.
+  </Card>
+  <Card title="Amazon S3" icon="cloud" href="connectors/file-storage">
+    `S3Destination` — same formats to any S3-compatible bucket, with optional AWS Glue catalog registration.
+  </Card>
+  <Card title="Azure Blob Storage" icon="cloud" href="connectors/file-storage">
+    `AzureDestination` — writes to Azure Blob Storage using `AzureAccountKeyCredentials`.
+  </Card>
+  <Card title="Google Cloud Storage" icon="cloud" href="connectors/file-storage">
+    `GCSDestination` — writes to GCS using `GCPServiceAccountKeyCredentials`.
+  </Card>
+  <Card title="MySQL / MariaDB" icon="database" href="connectors/databases">
+    `MySQLDestination` / `MariaDBDestination` — append or replace rows in MySQL-family databases.
+  </Card>
+  <Card title="PostgreSQL / Oracle" icon="database" href="connectors/databases">
+    `PostgresDestination` / `OracleDestination` — same interface, different URI scheme and driver.
+  </Card>
+</CardGroup>

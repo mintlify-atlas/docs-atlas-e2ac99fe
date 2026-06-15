@@ -1,0 +1,169 @@
+---
+title: "Publish data from files and databases into Tabsdata"
+sidebarTitle: "Publishing"
+description: "Define publisher functions that read from files or databases and write tabular data into Tabsdata collections for downstream use."
+---
+
+Publishers are the entry point for data in Tabsdata. A publisher function reads tabular data from an external source — a local file, a cloud object store, or a SQL database — and writes it into one or more Tabsdata tables. Once that data lands in a collection, transformers and subscribers can react to it automatically. Publishers are decorated with `@td.publisher`, which wires the source, the output table names, and the optional trigger together in a single, declarative step.
+
+## The `@td.publisher` decorator
+
+```python
+@td.publisher(
+    source,
+    tables,
+    name=None,
+    trigger_by=None,
+    on_tables=None,
+)
+```
+
+<ParamField path="source" type="LocalFileSource | S3Source | AzureSource | GCSSource | MySQLSource | PostgresSource | OracleSource | MariaDBSource | SourcePlugin" required>
+  The input source that provides data to the publisher function. Use a file-based source class for object stores and local paths, or a SQL source class for relational databases.
+</ParamField>
+
+<ParamField path="tables" type="str | list[str]" required>
+  The Tabsdata table name(s) to write the publisher output into. Pass a single string for one output table or a list when the function returns multiple frames.
+</ParamField>
+
+<ParamField path="name" type="str" default="function name">
+  An optional override for the registered function name. When omitted, Tabsdata uses the Python function name.
+</ParamField>
+
+<ParamField path="trigger_by" type="CronTrigger | None" default="None">
+  Controls what causes the publisher to run. Pass a `CronTrigger` to run on a schedule, or `None` (the default) to require manual triggering via `td fn trigger`.
+
+  <Note>
+    Publishers cannot subscribe to Tabsdata tables. Unlike transformers and subscribers, `trigger_by` for a publisher only accepts `CronTrigger` or `None` — not table names.
+  </Note>
+</ParamField>
+
+<ParamField path="on_tables" type="OnTablesSpec" default="None">
+  Optional table-level actions to perform on the output tables after the function executes (for example, compaction or expiry policies).
+</ParamField>
+
+## Examples
+
+### Read from a local CSV file
+
+The simplest publisher reads a CSV from disk and writes it into a Tabsdata table. The file format is inferred from the `.csv` extension automatically.
+
+```python
+import os
+import tabsdata as td
+
+
+@td.publisher(
+    source=td.LocalFileSource(os.path.join(os.getcwd(), "input", "persons.csv")),
+    tables="persons",
+)
+def pub(persons: td.TableFrame) -> td.TableFrame:
+    return persons
+```
+
+<Tip>
+  `LocalFileSource` also accepts a list of paths and supports glob patterns. Pass `format="parquet"` explicitly when the extension is ambiguous.
+</Tip>
+
+### Read from Amazon S3
+
+Use `S3Source` with `S3AccessKeyCredentials` to pull files from an S3 bucket. Credentials accept plain strings or any `Secret` subclass so that keys are never stored in source code.
+
+```python
+import tabsdata as td
+
+
+@td.publisher(
+    source=td.S3Source(
+        uri="s3://my-bucket/data/sales/*.parquet",
+        credentials=td.S3AccessKeyCredentials(
+            aws_access_key_id=td.EnvironmentSecret("AWS_ACCESS_KEY_ID"),
+            aws_secret_access_key=td.EnvironmentSecret("AWS_SECRET_ACCESS_KEY"),
+        ),
+        region="us-east-1",
+    ),
+    tables="sales_raw",
+    trigger_by=td.CronTrigger("0 6 * * *"),  # run every day at 06:00 UTC
+)
+def ingest_sales(sales: td.TableFrame) -> td.TableFrame:
+    return sales
+```
+
+`S3Source` supports `csv`, `parquet`, `avro`, `ndjson` / `jsonl`, and `log` formats. Set `initial_last_modified` to only pick up files newer than a given ISO 8601 timestamp on the first run.
+
+### Read from a MySQL database
+
+SQL sources run one or more queries against a relational database and map each result set to a function parameter. Pass multiple query strings as a list when you need more than one result set.
+
+```python
+import tabsdata as td
+
+
+@td.publisher(
+    source=td.MySQLSource(
+        uri="mysql://db.example.com:3306/warehouse",
+        query="SELECT * FROM orders WHERE status = 'pending'",
+        credentials=td.UserPasswordCredentials(
+            user="etl_user",
+            password=td.EnvironmentSecret("MYSQL_PASSWORD"),
+        ),
+    ),
+    tables="pending_orders",
+    trigger_by=td.CronTrigger("*/30 * * * *"),  # every 30 minutes
+)
+def ingest_orders(orders: td.TableFrame) -> td.TableFrame:
+    return orders
+```
+
+<Note>
+  `MySQLSource`, `PostgresSource`, `OracleSource`, and `MariaDBSource` all share the same `uri`, `query`, `credentials`, and `initial_values` parameters. Swap the class and update the URI scheme (`mysql://`, `postgresql://`, `oracle://`, `mariadb://`) to switch databases.
+</Note>
+
+## Registering and triggering a publisher
+
+<Steps>
+  <Step title="Register the function">
+    Point `td fn register` at the Python file containing the decorated function and specify the target collection.
+
+    ```bash
+    td fn register --coll my-collection --path publisher.py
+    ```
+  </Step>
+  <Step title="Trigger a manual run">
+    If `trigger_by` is `None` (or you need an immediate run regardless of the schedule), use `td fn trigger`.
+
+    ```bash
+    td fn trigger --coll my-collection --name pub
+    ```
+  </Step>
+  <Step title="Check execution status">
+    List recent function runs and inspect logs.
+
+    ```bash
+    td fn list --coll my-collection
+    ```
+  </Step>
+</Steps>
+
+## Supported file sources
+
+<CardGroup cols={2}>
+  <Card title="Local Files" icon="folder-open" href="connectors/file-storage">
+    `LocalFileSource` — CSV, Parquet, Avro, NDJSON, and log files from the local filesystem.
+  </Card>
+  <Card title="Amazon S3" icon="cloud" href="connectors/file-storage">
+    `S3Source` — same formats from any S3-compatible bucket, with optional region and incremental-load support.
+  </Card>
+  <Card title="Azure Blob Storage" icon="cloud" href="connectors/file-storage">
+    `AzureSource` — reads from Azure Blob Storage using `AzureAccountKeyCredentials`.
+  </Card>
+  <Card title="Google Cloud Storage" icon="cloud" href="connectors/file-storage">
+    `GCSSource` — reads from GCS using `GCPServiceAccountKeyCredentials`.
+  </Card>
+  <Card title="MySQL / MariaDB" icon="database" href="connectors/databases">
+    `MySQLSource` / `MariaDBSource` — arbitrary SQL queries with optional incremental offsets.
+  </Card>
+  <Card title="PostgreSQL / Oracle" icon="database" href="connectors/databases">
+    `PostgresSource` / `OracleSource` — same interface, different URI scheme and driver.
+  </Card>
+</CardGroup>
