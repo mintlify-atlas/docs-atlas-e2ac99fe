@@ -1,7 +1,7 @@
 ---
 title: "TableFrame: Polars-backed data transformation API"
 sidebarTitle: "TableFrame"
-description: "TableFrame is Tabsdata's lazy, Polars-backed data abstraction for filtering, joining, and transforming tabular data inside publisher, transformer, and subscriber functions."
+description: "TableFrame is Tabsdata's lazy, Polars-backed data abstraction for filtering, joining, and transforming tabular data inside Tabsdata functions."
 ---
 
 `TableFrame` is the primary data structure inside every Tabsdata function. When a publisher, transformer, or subscriber runs, the server deserialises each input table into a `TableFrame` and passes it to your Python function as an argument. Your function then returns one or more `TableFrame` objects, which the server materialises and stores as versioned tables.
@@ -32,15 +32,14 @@ tf = td.TableFrame({"id": [1, 2, 3], "name": ["Alice", "Bob", "Carol"]})
 
 # From a Polars LazyFrame or DataFrame
 import polars as pl
-tf = td.from_polars(pl.DataFrame({"value": [10, 20, 30]}))
+tf = td.TableFrame.from_polars(pl.DataFrame({"value": [10, 20, 30]}))
 
 # From a Pandas DataFrame
 import pandas as pd
-tf = td.from_pandas(pd.DataFrame({"score": [0.9, 0.7, 0.8]}))
+tf = td.TableFrame.from_pandas(pd.DataFrame({"score": [0.9, 0.7, 0.8]}))
 
 # Empty TableFrame (useful as a starting point)
-from tabsdata.tableframe import empty, Schema
-tf = empty()
+tf = td.TableFrame.empty()
 ```
 
 ## Converting back to standard formats
@@ -50,13 +49,13 @@ tf = empty()
 lf: pl.LazyFrame = tf.to_polars_lf()
 
 # To Polars (materialised)
-df: pl.DataFrame = td.to_polars_df(tf)
+df: pl.DataFrame = tf.to_polars_df()
 
 # To Pandas
-pdf = td.to_pandas(tf)
+pdf = tf.to_pandas()
 
 # To a plain Python dictionary
-d = td.to_dict(tf)
+d = tf.to_dict()
 ```
 
 ## Core transformation operations
@@ -183,24 +182,26 @@ currency = td.lit("USD").alias("currency")
 
 ## User-defined functions (UDF)
 
-For operations that cannot be expressed as column expressions, use `td.UDF`:
+For operations that cannot be expressed as column expressions, use `tabsdata.tableframe.UDF`. Subclass `UDF`, implement `on_batch` (receives a list of Polars Series) or `on_element` (receives per-row scalar values), and pass an instance to `tf.udf()`:
 
 ```python
 import tabsdata as td
+import tabsdata.tableframe as tdf
 
-def clean_phone(phone: str) -> str:
-    return phone.replace("-", "").replace(" ", "")
+class CleanPhoneUDF(tdf.UDF):
+    def __init__(self):
+        super().__init__(("phone_clean", tdf.String))
+
+    def on_element(self, values):
+        phone = values[0]
+        return [phone.replace("-", "").replace(" ", "") if phone else None]
 
 @td.transformer(
     input_tables=["raw/contacts"],
     output_tables=["clean_contacts"],
 )
 def normalize(contacts: td.TableFrame) -> td.TableFrame:
-    return contacts.with_columns(
-        td.col("phone")
-        .map_elements(clean_phone, return_dtype=td.String)
-        .alias("phone_clean")
-    )
+    return contacts.udf(td.col("phone"), CleanPhoneUDF())
 ```
 
 ## Built-in data types

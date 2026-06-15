@@ -7,7 +7,7 @@ description: "Complete reference for the TableFrame class—Tabsdata's lazy, Pol
 `TableFrame` is Tabsdata's primary data-manipulation object. It wraps a Polars `LazyFrame` and adds Tabsdata-specific system columns, provenance tracking, and data-quality hooks. Like a Polars lazy frame, operations on a `TableFrame` are not executed immediately—they build a logical plan that the engine executes when the function returns. All methods return a new `TableFrame`, making the API fully composable.
 
 <Note>
-Import with `import tabsdata as td`. The `TableFrame` class and all helpers are accessible from the `td` namespace.
+Import the core API with `import tabsdata as td`. `TableFrame`, `col`, `lit`, and `concat` are available directly from `td`. Factory functions (`from_polars`, `from_pandas`, `from_dict`, `empty`) and advanced utilities (`UDF`, `selectors`, `Schema`) live in `tabsdata.tableframe` (`import tabsdata.tableframe as tdf`).
 </Note>
 
 ---
@@ -16,72 +16,75 @@ Import with `import tabsdata as td`. The `TableFrame` class and all helpers are 
 
 Use these module-level helpers to construct a `TableFrame` from external data. Inside a `@td.publisher`, `@td.transformer`, or `@td.subscriber` function the framework provides `TableFrame` arguments automatically—these factories are mainly useful for tests and stand-alone scripts.
 
-<ParamField path="td.from_polars(data)" type="function">
+They live in the `tabsdata.tableframe` sub-module (not the top-level `td` namespace):
+
+```python
+import tabsdata.tableframe as tdf
+```
+
+<ParamField path="tdf.from_polars(data)" type="function">
   Create a `TableFrame` from a `polars.LazyFrame`, `polars.DataFrame`, or `None`.
   Passing `None` returns an empty (zero-column, zero-row) `TableFrame`.
 
   ```python
   import polars as pl
-  import tabsdata as td
+  import tabsdata.tableframe as tdf
 
   lf = pl.LazyFrame({"x": [1, 2, 3]})
-  tf = td.from_polars(lf)
+  tf = tdf.from_polars(lf)
   ```
 </ParamField>
 
-<ParamField path="td.from_pandas(data)" type="function">
+<ParamField path="tdf.from_pandas(data)" type="function">
   Create a `TableFrame` from a `pandas.DataFrame` or `None`.
 
   ```python
   import pandas as pd
-  import tabsdata as td
+  import tabsdata.tableframe as tdf
 
   df = pd.DataFrame({"name": ["Alice", "Bob"], "score": [95, 87]})
-  tf = td.from_pandas(df)
+  tf = tdf.from_pandas(df)
   ```
 </ParamField>
 
-<ParamField path="td.from_dict(data)" type="function">
+<ParamField path="tdf.from_dict(data)" type="function">
   Create a `TableFrame` from a plain Python dictionary mapping column names to
   lists of values, or `None`.
 
   ```python
-  import tabsdata as td
+  import tabsdata.tableframe as tdf
 
-  tf = td.from_dict({"city": ["NY", "LA"], "pop": [8_000_000, 4_000_000]})
+  tf = tdf.from_dict({"city": ["NY", "LA"], "pop": [8_000_000, 4_000_000]})
   ```
 </ParamField>
 
-<ParamField path="td.empty()" type="function">
+<ParamField path="tdf.empty()" type="function">
   Create a zero-column, zero-row `TableFrame`. Accepts an optional `schema`
-  argument (a `td.Schema`) to define column types upfront.
+  argument (a `tdf.Schema`) to define column types upfront.
 </ParamField>
 
 ---
 
 ## Conversion functions
 
-<ParamField path="td.to_polars_df(tf)" type="function">
-  Collect the `TableFrame` and return a `polars.DataFrame`. Triggers execution
-  of the lazy plan.
-</ParamField>
-
-<ParamField path="td.to_polars_lf(tf)" type="function">
-  Return the underlying `polars.LazyFrame` without collecting. System columns
-  are stripped.
-</ParamField>
-
-<ParamField path="td.to_pandas(tf)" type="function">
-  Collect the `TableFrame` and return a `pandas.DataFrame`.
-</ParamField>
-
-These are also available as instance methods on the `TableFrame` object:
+These are available as instance methods on the `TableFrame` object:
 
 ```python
 df  = tf.to_polars_df()   # -> polars.DataFrame
 lf  = tf.to_polars_lf()   # -> polars.LazyFrame
 pdf = tf.to_pandas()       # -> pandas.DataFrame
 d   = tf.to_dict()         # -> dict[str, list[Any]]
+```
+
+The same functions are also available as module-level helpers in `tabsdata.tableframe`:
+
+```python
+import tabsdata.tableframe as tdf
+
+df  = tdf.to_polars_df(tf)   # -> polars.DataFrame
+lf  = tdf.to_polars_lf(tf)   # -> polars.LazyFrame
+pdf = tdf.to_pandas(tf)       # -> pandas.DataFrame
+d   = tdf.to_dict(tf)         # -> dict[str, list[Any]]
 ```
 
 ---
@@ -205,7 +208,7 @@ result = tf.rename({"old_name": "new_name"})
   `column_name → dtype` or a single dtype to cast all columns.
 
   ```python
-  tf.cast({td.col("score"): td.Float64, td.col("age"): td.Int32})
+  tf.cast({"score": td.Float64, "age": td.Int32})
   ```
 </ParamField>
 
@@ -310,38 +313,43 @@ td.TEMPORAL_DTYPES       # {Date, Datetime, Duration, Time}
 
 ---
 
-## Column selectors — `td.selectors`
+## Column selectors — `tdf.selectors`
 
-`td.selectors` provides helper utilities for selecting columns by type or pattern without naming them explicitly.
+`tabsdata.tableframe.selectors` provides helper utilities for selecting columns by type or pattern without naming them explicitly.
 
 ```python
-import tabsdata as td
-from tabsdata import selectors as cs
+import tabsdata.tableframe as tdf
 
 # Select all numeric columns
-tf.select(cs.numeric())
+tf.select(tdf.selectors.numeric())
 
 # Select all string columns
-tf.select(cs.string())
+tf.select(tdf.selectors.string())
 
 # Combine selectors
-tf.select(cs.numeric() | cs.by_name("id"))
+tf.select(tdf.selectors.numeric() | tdf.selectors.by_name("id"))
 ```
 
 ---
 
-## User-defined functions — `td.UDF`
+## User-defined functions — `tdf.UDF`
 
-The `td.UDF` base class lets you apply custom Python logic element-by-element or batch-by-batch via the `.udf()` method on a `TableFrame`. Subclass `td.UDF` and implement `on_element` or `on_batch`.
+The `UDF` base class (in `tabsdata.tableframe`) lets you apply custom Python logic element-by-element or batch-by-batch via the `.udf()` method on a `TableFrame`. Subclass `tdf.UDF` and implement `on_element` or `on_batch`.
+
+The `.udf()` method takes two positional arguments: `on` (an expression or list of expressions selecting input columns) and `function` (the `UDF` instance).
 
 ```python
 import tabsdata as td
+import tabsdata.tableframe as tdf
 
-class ScoreNormalizer(td.UDF):
+class ScoreNormalizer(tdf.UDF):
+    def __init__(self):
+        super().__init__([("norm_score", td.Float64)])
+
     def on_element(self, score):
-        return min(max(score / 100.0, 0.0), 1.0)
+        return [min(max(score / 100.0, 0.0), 1.0)]
 
-result = tf.udf(ScoreNormalizer(), input_cols=["score"], output_col="norm_score")
+result = tf.udf(on=td.col("score"), function=ScoreNormalizer())
 ```
 
 ---

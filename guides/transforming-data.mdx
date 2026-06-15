@@ -127,28 +127,6 @@ def enrich_orders(
   `trigger_by=["orders"]` means the transformer re-runs when `orders` updates, even if `customers` hasn't changed. The latest snapshot of `customers` is still passed in — only the trigger list governs *when* to run.
 </Tip>
 
-### Write results to an external destination
-
-Transformers are not limited to writing back to Tabsdata tables. Pass a file or SQL destination class as `output_tables` to have the transformer export its results directly to an external system.
-
-```python
-import tabsdata as td
-
-
-@td.transformer(
-    input_tables="enriched_orders",
-    output_tables=td.S3Destination(
-        uri="s3://my-bucket/exports/enriched_orders.parquet",
-        credentials=td.S3AccessKeyCredentials(
-            aws_access_key_id=td.EnvironmentSecret("AWS_ACCESS_KEY_ID"),
-            aws_secret_access_key=td.EnvironmentSecret("AWS_SECRET_ACCESS_KEY"),
-        ),
-    ),
-)
-def export_orders(enriched: td.TableFrame) -> td.TableFrame:
-    return enriched
-```
-
 ## Multiple output frames
 
 When a transformer function returns a tuple, each element is written to the corresponding entry in `output_tables` by position. The number of return values must match the length of `output_tables`.

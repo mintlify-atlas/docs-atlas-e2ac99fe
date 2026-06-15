@@ -101,12 +101,12 @@ td exe info --plan a1b2c3d4-e5f6-...
 
 ---
 
-### `td exe list_plan`
+### `td exe list-plan`
 
 List execution plans, with optional filters. Supports real-time monitoring.
 
 ```bash
-td exe list_plan [--status <status>...] [--fn <fn>] [--coll <coll>] \
+td exe list-plan [--status <status>...] [--fn <fn>] [--coll <coll>] \
   [--name <wildcard>] [--last] [--at <time>] [--monitor]
 ```
 
@@ -125,19 +125,19 @@ td exe list_plan [--status <status>...] [--fn <fn>] [--coll <coll>] \
 **Example**
 
 ```bash
-td exe list_plan --coll analytics
-td exe list_plan --last --monitor
-td exe list_plan --status failed
+td exe list-plan --coll analytics
+td exe list-plan --last --monitor
+td exe list-plan --status failed
 ```
 
 ---
 
-### `td exe list_trx`
+### `td exe list-trx`
 
 List transactions with optional filters.
 
 ```bash
-td exe list_trx [--status <status>...] [--coll <coll>] \
+td exe list-trx [--status <status>...] [--coll <coll>] \
   [--plan-name <wildcard>] [--plan <plan-id>] [--last] [--at <time>] [--monitor]
 ```
 
@@ -156,17 +156,17 @@ td exe list_trx [--status <status>...] [--coll <coll>] \
 **Example**
 
 ```bash
-td exe list_trx --coll analytics --last
+td exe list-trx --coll analytics --last
 ```
 
 ---
 
-### `td exe list_fn_run`
+### `td exe list-fn-run`
 
 List function runs for a given plan, function, or transaction.
 
 ```bash
-td exe list_fn_run [--status <status>...] [--plan <plan-id>] \
+td exe list-fn-run [--status <status>...] [--plan <plan-id>] \
   [--plan-name <wildcard>] [--fn <fn>] [--coll <coll>] [--trx <trx-id>]
 ```
 
@@ -184,18 +184,18 @@ td exe list_fn_run [--status <status>...] [--plan <plan-id>] \
 **Example**
 
 ```bash
-td exe list_fn_run --plan a1b2c3d4
-td exe list_fn_run --fn load_sales --coll analytics
+td exe list-fn-run --plan a1b2c3d4
+td exe list-fn-run --fn load_sales --coll analytics
 ```
 
 ---
 
-### `td exe list_worker`
+### `td exe list-worker`
 
 List workers associated with a plan, function run, or transaction.
 
 ```bash
-td exe list_worker [--status <status>...] [--plan <plan-id>] \
+td exe list-worker [--status <status>...] [--plan <plan-id>] \
   [--fn <fn>] [--fn-run <fn-run-id>] [--coll <coll>] [--trx <trx-id>]
 ```
 
@@ -204,17 +204,17 @@ td exe list_worker [--status <status>...] [--plan <plan-id>] \
 | Flag | Description |
 |------|-------------|
 | `--status` | Filter by status (repeatable). |
-| `--plan` | Filter by plan ID. |
+| `--plan` | Filter by plan ID. Mutually exclusive with `--plan-name`, `--fn-run`, `--fn`, `--trx`. |
 | `--plan-name` | Wildcard match on plan name. Mutually exclusive with `--plan`. |
-| `--fn` | Filter by function name (requires `--coll`). |
-| `--fn-run` | Filter by function run ID. |
+| `--fn` | Filter by function name (requires `--coll`). Mutually exclusive with `--fn-run`, `--plan`, `--trx`. |
+| `--fn-run` | Filter by function run ID. Mutually exclusive with `--fn`, `--plan`, `--trx`. |
 | `--coll` | Collection of the function. |
-| `--trx` | Filter by transaction ID. |
+| `--trx` | Filter by transaction ID. Mutually exclusive with `--fn-run`, `--plan`, `--fn`. |
 
 **Example**
 
 ```bash
-td exe list_worker --plan a1b2c3d4
+td exe list-worker --plan a1b2c3d4
 ```
 
 ---
@@ -236,12 +236,12 @@ td exe logs --fn <fn> --coll <coll> [--file <path>]
 |------|-------------|
 | `--worker` | ID of a specific worker. Mutually exclusive with all filter flags. |
 | `--file` | Save logs to this file path instead of printing to stdout. |
-| `--plan` | Filter workers by plan ID. |
+| `--plan` | Filter workers by plan ID. Mutually exclusive with `--plan-name`, `--fn`, `--fn-run`, `--trx`. |
 | `--plan-name` | Wildcard match on plan name. Mutually exclusive with `--plan`. |
-| `--fn` | Filter by function name. Requires `--coll`. |
-| `--fn-run` | Filter by function run ID. |
+| `--fn` | Filter by function name. Requires `--coll`. Mutually exclusive with `--fn-run`, `--plan`, `--trx`. |
+| `--fn-run` | Filter by function run ID. Mutually exclusive with `--fn`, `--plan`, `--trx`. |
 | `--coll` | Collection of the function. |
-| `--trx` | Filter by transaction ID. |
+| `--trx` | Filter by transaction ID. Mutually exclusive with `--fn-run`, `--plan`, `--fn`. |
 | `--status` | Filter workers by status (repeatable). |
 
 **Example**
@@ -288,6 +288,13 @@ td exe cancel --plan <plan-id>
 td exe cancel --trx <trx-id>
 ```
 
+**Flags**
+
+| Flag | Short | Description |
+|------|-------|-------------|
+| `--plan` | | ID of the plan to cancel. Mutually exclusive with `--trx`. |
+| `--trx` | `-t` | ID of the transaction to cancel. Mutually exclusive with `--plan`. |
+
 **Example**
 
 ```bash
@@ -305,6 +312,13 @@ td exe recover --plan <plan-id>
 # or
 td exe recover --trx <trx-id>
 ```
+
+**Flags**
+
+| Flag | Short | Description |
+|------|-------|-------------|
+| `--plan` | | ID of the plan to recover. Mutually exclusive with `--trx`. |
+| `--trx` | `-t` | ID of the transaction to recover. Mutually exclusive with `--plan`. |
 
 **Example**
 
@@ -346,6 +360,11 @@ Stop the stage worker for a function.
 ```bash
 td stage stop --name <fn-name> --coll <coll>
 ```
+
+| Flag | Short | Description |
+|------|-------|-------------|
+| `--name` | `-n` | Name of the function whose stage worker to stop. |
+| `--coll` | `-c` | Collection the function belongs to. |
 
 **Example**
 
@@ -409,6 +428,11 @@ Stop the cron worker for a function.
 ```bash
 td cron stop --name <fn-name> --coll <coll>
 ```
+
+| Flag | Short | Description |
+|------|-------|-------------|
+| `--name` | `-n` | Name of the function whose cron worker to stop. |
+| `--coll` | `-c` | Collection the function belongs to. |
 
 **Example**
 

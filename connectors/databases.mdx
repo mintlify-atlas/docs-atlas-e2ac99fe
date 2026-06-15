@@ -10,10 +10,10 @@ SQL database connectors let you pull rows from a relational database into a Tabs
 
 | Database | Source class | Destination class | CDC trigger |
 |---|---|---|---|
-| MySQL | `MySQLSource` | `MySQLDestination` | `MySQLCdcTrigger` |
-| MariaDB | `MariaDBSource` | `MariaDBDestination` | — |
-| PostgreSQL | `PostgresSource` | `PostgresDestination` | `PostgresCdcTrigger` |
-| Oracle | `OracleSource` | `OracleDestination` | — |
+| MySQL | `MySQLSrc` | `MySQLDest` | `MySQLCdcTrigger` |
+| MariaDB | `MariaDBSrc` | `MariaDBDest` | — |
+| PostgreSQL | `PostgresSrc` | `PostgresDest` | `PostgresCdcTrigger` |
+| Oracle | `OracleSrc` | `OracleDestination` | — |
 | Microsoft SQL Server | `MSSQLSource` | `MSSQLDestination` | — |
 | IBM Db2 | — | — | `Db2CdcTrigger` |
 | ClickHouse | (via generic URI) | — | — |
@@ -41,6 +41,10 @@ Store credentials using `EnvironmentSecret` or another secret backend rather tha
 
 ### `MySQLSource`
 
+<Warning>
+`MySQLSource` is deprecated since version 1.6.0. Use `MySQLSrc` with a `MySQLConn` connection object instead, which provides improved attribute organization and support for managed connections.
+</Warning>
+
 ```python
 MySQLSource(
     uri: str,
@@ -67,6 +71,10 @@ MySQLSource(
 </ParamField>
 
 ### `MySQLDestination`
+
+<Warning>
+`MySQLDestination` is deprecated since version 1.6.0. Use `MySQLDest` with a `MySQLConn` connection object instead.
+</Warning>
 
 ```python
 MySQLDestination(
@@ -115,6 +123,10 @@ def ingest_orders(orders: td.TableFrame) -> td.TableFrame:
 
 ### `MariaDBSource`
 
+<Warning>
+`MariaDBSource` is deprecated since version 1.6.0. Use `MariaDBSrc` with a `MariaDBConn` connection object instead.
+</Warning>
+
 ```python
 MariaDBSource(
     uri: str,                             # mariadb://host:3306/mydb
@@ -125,6 +137,10 @@ MariaDBSource(
 ```
 
 ### `MariaDBDestination`
+
+<Warning>
+`MariaDBDestination` is deprecated since version 1.6.0. Use `MariaDBDest` with a `MariaDBConn` connection object instead.
+</Warning>
 
 ```python
 MariaDBDestination(
@@ -141,6 +157,10 @@ MariaDBDestination(
 
 ### `PostgresSource`
 
+<Warning>
+`PostgresSource` is deprecated since version 1.6.0. Use `PostgresSrc` with a `PostgresConn` connection object instead.
+</Warning>
+
 ```python
 PostgresSource(
     uri: str,                             # postgresql://host:5432/mydb
@@ -151,6 +171,10 @@ PostgresSource(
 ```
 
 ### `PostgresDestination`
+
+<Warning>
+`PostgresDestination` is deprecated since version 1.6.0. Use `PostgresDest` with a `PostgresConn` connection object instead.
+</Warning>
 
 ```python
 PostgresDestination(
@@ -191,6 +215,10 @@ def export_orders(orders: td.TableFrame) -> td.TableFrame:
 
 ### `OracleSource`
 
+<Warning>
+`OracleSource` is deprecated since version 1.6.0. Use `OracleSrc` with an `OracleConn` connection object instead.
+</Warning>
+
 ```python
 OracleSource(
     uri: str,                             # oracle://host:1521/service
@@ -218,6 +246,10 @@ OracleDestination(
 `MSSQLSource` and `MSSQLDestination` are provided by the optional `tabsdata-mssql` package and use an ODBC connection string.
 
 ### `MSSQLSource`
+
+<Warning>
+`MSSQLSource` is deprecated since version 1.6.0. Use `MSSQLSrc` with an `MSSQLConn` connection object instead.
+</Warning>
 
 ```python
 MSSQLSource(
@@ -247,7 +279,11 @@ MSSQLDestination(
     connection_string: str,
     destination_table: str | list[str],
     credentials: dict | UserPasswordCredentials | None = None,
+    server: str | Secret = None,
+    database: str | Secret = None,
+    driver: str | Secret = None,
     if_table_exists: "append" | "replace" = "append",
+    chunk_size: int = 50000,
 )
 ```
 
@@ -286,7 +322,6 @@ trigger = MySQLCdcTrigger(
     tables=["mydb.orders", "mydb.customers"],
     start_from="earliest",           # or a GTID / binlog position
     server_id=512,
-    time_rollover_secs=60,
 )
 ```
 

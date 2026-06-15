@@ -63,7 +63,7 @@ from tabsdata.connector.kafka import KafkaTrigger
 KafkaTrigger(
     conn: KafkaConn,
     topic: str,
-    data_format: "avro" | "json" | "protobuf" | Protobuf,
+    data_format: "avro" | "json" | Protobuf,
     schema: str,
     group_id: str | None = None,
     time_rollover_secs: int = 60,
@@ -84,7 +84,7 @@ KafkaTrigger(
 </ParamField>
 
 <ParamField path="data_format" type="str | Protobuf" required>
-  Message serialization format. Use `"avro"`, `"json"`, or `"protobuf"` (or a `Protobuf` object for schema-less Protobuf with a specific message name).
+  Message serialization format. Use `"avro"` or `"json"` as a string, or pass a `Protobuf` object to specify Protobuf deserialization with a particular message type name.
 </ParamField>
 
 <ParamField path="schema" type="str" required>

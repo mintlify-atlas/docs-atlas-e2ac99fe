@@ -8,12 +8,12 @@ The `td auth` command group handles SSL certificate management and the authentic
 
 ## Subcommands
 
-### `td auth add_cert`
+### `td auth add-cert`
 
 Add a PEM certificate for a Tabsdata server. Only needed when the server uses a self-signed certificate.
 
 ```bash
-td auth add_cert --server <url> --pem <path>
+td auth add-cert --server <url> --pem <path>
 ```
 
 **Flags**
@@ -31,19 +31,19 @@ The certificate is copied to the Tabsdata certificate store directory (`~/.tabsd
 
 ```bash
 # Add a self-signed certificate for a local dev server
-td auth add_cert \
+td auth add-cert \
   --server https://localhost:8080 \
   --pem ~/certs/myserver.pem
 ```
 
 ---
 
-### `td auth delete_cert`
+### `td auth delete-cert`
 
 Remove the certificate that was previously added for a server.
 
 ```bash
-td auth delete_cert --server <url>
+td auth delete-cert --server <url>
 ```
 
 **Flags**
@@ -55,7 +55,7 @@ td auth delete_cert --server <url>
 **Example**
 
 ```bash
-td auth delete_cert --server https://localhost:8080
+td auth delete-cert --server https://localhost:8080
 ```
 
 If no certificate is found for the specified server, the command prints the expected path and exits without error.
@@ -80,12 +80,12 @@ td auth info
 
 ---
 
-### `td auth role_change`
+### `td auth role-change`
 
 Switch the active role for the current session without logging out and back in.
 
 ```bash
-td auth role_change <role>
+td auth role-change <role>
 ```
 
 **Arguments**
@@ -97,17 +97,17 @@ td auth role_change <role>
 **Example**
 
 ```bash
-td auth role_change admin
+td auth role-change admin
 ```
 
 ---
 
-### `td auth password_change`
+### `td auth password-change`
 
 Change the password of a user on a Tabsdata server. This command opens a new unauthenticated connection so it works even when your current session credentials are outdated.
 
 ```bash
-td auth password_change <server-url> \
+td auth password-change <server-url> \
   --user <username> \
   --old-password <old-pw> \
   --new-password <new-pw>
@@ -137,12 +137,12 @@ Passing passwords as plain command-line arguments is discouraged. Prefer enterin
 
 ```bash
 # Interactively prompted new password
-td auth password_change https://my-server:8080 --user alice
+td auth password-change https://my-server:8080 --user alice
 ```
 
 ```bash
 # Non-interactive (avoid in shared environments)
-td auth password_change https://my-server:8080 \
+td auth password-change https://my-server:8080 \
   --user alice \
   --old-password old_s3cr3t \
   --new-password new_s3cr3t

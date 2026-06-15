@@ -258,12 +258,12 @@ td role unpin
 
 ---
 
-### `td role add_user`
+### `td role add-user`
 
 Add a user to a role.
 
 ```bash
-td role add_user --name <role> --user <username>
+td role add-user --name <role> --user <username>
 ```
 
 **Flags**
@@ -276,17 +276,17 @@ td role add_user --name <role> --user <username>
 **Example**
 
 ```bash
-td role add_user --name data-engineer --user alice
+td role add-user --name data-engineer --user alice
 ```
 
 ---
 
-### `td role delete_user`
+### `td role delete-user`
 
 Remove a user from a role.
 
 ```bash
-td role delete_user --name <role> --user <username>
+td role delete-user --name <role> --user <username>
 ```
 
 **Flags**
@@ -299,17 +299,17 @@ td role delete_user --name <role> --user <username>
 **Example**
 
 ```bash
-td role delete_user --name data-engineer --user alice
+td role delete-user --name data-engineer --user alice
 ```
 
 ---
 
-### `td role list_user`
+### `td role list-user`
 
 List all users that belong to a role.
 
 ```bash
-td role list_user --name <role>
+td role list-user --name <role>
 ```
 
 Prints a table with columns: **Name**, **Full name**, **Email**, **Enabled**.
@@ -317,17 +317,17 @@ Prints a table with columns: **Name**, **Full name**, **Email**, **Enabled**.
 **Example**
 
 ```bash
-td role list_user --name data-engineer
+td role list-user --name data-engineer
 ```
 
 ---
 
-### `td role add_perm`
+### `td role add-perm`
 
 Add a permission to a role. Permissions that apply to a specific collection require the `--coll` flag; pass `<ALL>` to apply the permission to all collections.
 
 ```bash
-td role add_perm --name <role> --perm <permission-type> [--coll <collection>]
+td role add-perm --name <role> --perm <permission-type> [--coll <collection>]
 ```
 
 **Flags**
@@ -342,22 +342,22 @@ td role add_perm --name <role> --perm <permission-type> [--coll <collection>]
 
 ```bash
 # Grant a collection-scoped permission
-td role add_perm --name data-engineer --perm read --coll analytics
+td role add-perm --name data-engineer --perm read --coll analytics
 
 # Grant a permission that applies to all collections
-td role add_perm --name data-engineer --perm read --coll "<ALL>"
+td role add-perm --name data-engineer --perm read --coll "<ALL>"
 ```
 
 ---
 
-### `td role delete_perm`
+### `td role delete-perm`
 
 Remove a permission from a role. Identify the permission by type (and optionally collection) or by its UUID.
 
 ```bash
-td role delete_perm --name <role> --perm <type> [--coll <collection>]
+td role delete-perm --name <role> --perm <type> [--coll <collection>]
 # or
-td role delete_perm --name <role> --id <permission-id>
+td role delete-perm --name <role> --id <permission-id>
 ```
 
 **Flags**
@@ -372,17 +372,17 @@ td role delete_perm --name <role> --id <permission-id>
 **Example**
 
 ```bash
-td role delete_perm --name data-engineer --perm read --coll analytics
+td role delete-perm --name data-engineer --perm read --coll analytics
 ```
 
 ---
 
-### `td role list_perm`
+### `td role list-perm`
 
 List all permissions of a role.
 
 ```bash
-td role list_perm --name <role>
+td role list-perm --name <role>
 ```
 
 Prints a table with columns: **ID**, **Permission type**, **Entity name**, **Granted on**, **Granted by**.
@@ -390,7 +390,7 @@ Prints a table with columns: **ID**, **Permission type**, **Entity name**, **Gra
 **Example**
 
 ```bash
-td role list_perm --name data-engineer
+td role list-perm --name data-engineer
 ```
 
 ---
@@ -403,12 +403,12 @@ td user create --name bob --full-name "Bob Jones" --email bob@example.com
 
 # 2. Create a role with a collection-scoped read permission
 td role create --name analyst --description "Read-only analyst role"
-td role add_perm --name analyst --perm read --coll analytics
+td role add-perm --name analyst --perm read --coll analytics
 
 # 3. Add the user to the role
-td role add_user --name analyst --user bob
+td role add-user --name analyst --user bob
 
 # 4. Verify
-td role list_user --name analyst
-td role list_perm --name analyst
+td role list-user --name analyst
+td role list-perm --name analyst
 ```

@@ -52,7 +52,7 @@ Collections are isolated by default. A function in collection `analytics` cannot
 
 ```bash
 # Allow the 'analytics' collection to read tables from 'raw'
-td collection add_perm --coll raw --to analytics
+td collection add_perm --name raw --to-coll analytics
 ```
 
 Once the permission is created, functions in `analytics` can reference tables using the fully-qualified name `raw/table_name` in their `input_tables` argument.

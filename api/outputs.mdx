@@ -188,6 +188,11 @@ dest = td.S3Destination(
   `"strict"` fails if the incoming schema differs from the table schema.
 </ParamField>
 
+<ParamField path="partitioned_table" type="bool" default="False">
+  Whether the Iceberg table is partitioned. When `True`, `if_table_exists` must
+  not be `\"replace\"` (replace is incompatible with partitioned tables).
+</ParamField>
+
 <ParamField path="s3_credentials" type="S3Credentials | None" default="None">
   S3 credentials for catalog S3 access (if different from the `S3Destination`
   credentials).
@@ -204,7 +209,7 @@ dest = td.S3Destination(
 SQL destinations write `TableFrame` results into relational database tables. Each destination class corresponds to a specific database engine.
 
 <Note>
-`MariaDBDestination`, `MySQLDestination`, and `PostgresDestination` are **deprecated** since version 1.6.0. Prefer the newer `MariaDBDest`, `MySQLDest`, and `PostgresDest` classes from the connector packages for new code.
+`MariaDBDestination`, `MySQLDestination`, and `PostgresDestination` are **deprecated** since version 1.6.0. Prefer the newer `MariaDBDest`, `MySQLDest`, and `PostgresDest` classes from the connector packages for new code. `OracleDestination` is not deprecated and remains the recommended class for Oracle databases.
 </Note>
 
 ### `MySQLDestination` *(deprecated)*

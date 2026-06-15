@@ -163,12 +163,12 @@ td collection unpin
 
 ---
 
-### `td collection add_perm`
+### `td collection add-perm`
 
 Grant one collection permission to read the tables of another collection. This is used for cross-collection data subscriptions.
 
 ```bash
-td collection add_perm --name <source-coll> --to-coll <target-coll>
+td collection add-perm --name <source-coll> --to-coll <target-coll>
 ```
 
 **Flags**
@@ -184,19 +184,19 @@ On success, the command prints the generated permission ID.
 
 ```bash
 # Allow "reporting" to read tables from "analytics"
-td collection add_perm --name reporting --to-coll analytics
+td collection add-perm --name reporting --to-coll analytics
 ```
 
 ---
 
-### `td collection delete_perm`
+### `td collection delete-perm`
 
 Remove a cross-collection read permission. You can identify the permission by target collection name (`--to-coll`) or by its UUID (`--id`). These two options are mutually exclusive.
 
 ```bash
-td collection delete_perm --name <source-coll> --to-coll <target-coll>
+td collection delete-perm --name <source-coll> --to-coll <target-coll>
 # or
-td collection delete_perm --name <source-coll> --id <permission-id>
+td collection delete-perm --name <source-coll> --id <permission-id>
 ```
 
 **Flags**
@@ -210,17 +210,17 @@ td collection delete_perm --name <source-coll> --id <permission-id>
 **Example**
 
 ```bash
-td collection delete_perm --name reporting --to-coll analytics
+td collection delete-perm --name reporting --to-coll analytics
 ```
 
 ---
 
-### `td collection list_perm`
+### `td collection list-perm`
 
 List all cross-collection read permissions that belong to a collection.
 
 ```bash
-td collection list_perm --name <name>
+td collection list-perm --name <name>
 ```
 
 **Flags**
@@ -234,7 +234,7 @@ Prints a table with columns: **ID**, **To collection**, **Granted on**, **Grante
 **Example**
 
 ```bash
-td collection list_perm --name reporting
+td collection list-perm --name reporting
 ```
 
 ---

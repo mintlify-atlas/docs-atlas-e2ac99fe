@@ -303,6 +303,34 @@ source = td.MariaDBSource(
 
 ---
 
+## Stage input
+
+### `Stage`
+
+A `Stage` source plugin is used by a `@td.publisher` to consume files that have been placed into the staging area by a `StageTrigger`. It is the paired counterpart to `StageTrigger` on the publisher side.
+
+```python
+import tabsdata as td
+
+@td.publisher(
+    source=td.Stage(use_existing_data=True),
+    tables="my_collection/staged_data",
+)
+def consume_staged(tf: td.TableFrame) -> td.TableFrame:
+    return tf
+```
+
+<ParamField path="use_existing_data" type="bool" default="True">
+  When the publisher function is updated or re-registered, whether to consume
+  files that were already present in the staging area before the update.
+</ParamField>
+
+<Note>
+`Stage` and `StageTrigger` are marked as **unstable** in the current release and may change in future versions. See [Triggers](/api/triggers) for the `StageTrigger` reference.
+</Note>
+
+---
+
 ## Table input
 
 ### `TableInput`
@@ -321,6 +349,25 @@ inp = td.TableInput(["collection/table_a", "collection/table_b"])
   Fully qualified Tabsdata table name(s) in the form `"collection/table"`.
   Pass a list to subscribe to multiple tables simultaneously.
 </ParamField>
+
+---
+
+## `FileInfo` enum
+
+`FileInfo` controls which file-origin metadata is injected as system columns when reading from a file source. Pass a `FileInfo` value (or its string equivalent) to the `file_info` parameter of any file source.
+
+| Value | System column added | Content |
+|-------|---------------------|---------|
+| `td.FileInfo.NAME` / `"name"` | `$__file_name` | The file's base name (without directory) |
+| `td.FileInfo.URI` / `"uri"` | `$__file_uri` | The full URI of the source file |
+
+```python
+source = td.S3Source(
+    uri="s3://my-bucket/data/*.parquet",
+    credentials=td.S3AccessKeyCredentials(...),
+    file_info=td.FileInfo.URI,  # or file_info="uri"
+)
+```
 
 ---
 
@@ -383,16 +430,64 @@ td.CSVFormat(
   Number of rows to skip before reading.
 </ParamField>
 
+<ParamField path="input_skip_rows_after_header" type="int" default="0">
+  Number of rows to skip after the header row.
+</ParamField>
+
 <ParamField path="input_try_parse_dates" type="bool" default="False">
   Attempt to parse string columns as dates automatically.
+</ParamField>
+
+<ParamField path="input_decimal_comma" type="bool" default="False">
+  Whether the CSV file uses a decimal comma (`,`) instead of a decimal point (`.`).
+</ParamField>
+
+<ParamField path="input_comment_prefix" type="str | int | None" default="None">
+  Lines starting with this character are treated as comments and skipped.
+</ParamField>
+
+<ParamField path="input_raise_if_empty" type="bool" default="True">
+  Raise an error if the CSV file is empty.
+</ParamField>
+
+<ParamField path="input_ignore_errors" type="bool" default="False">
+  Silently skip rows that fail to parse rather than raising an error.
 </ParamField>
 
 <ParamField path="output_include_header" type="bool" default="True">
   Include a header row when writing CSV.
 </ParamField>
 
+<ParamField path="output_datetime_format" type="str | None" default="None">
+  Format string for datetime columns on output (chrono Rust crate specifiers).
+</ParamField>
+
+<ParamField path="output_date_format" type="str | None" default="None">
+  Format string for date columns on output.
+</ParamField>
+
+<ParamField path="output_time_format" type="str | None" default="None">
+  Format string for time columns on output.
+</ParamField>
+
+<ParamField path="output_float_scientific" type="bool | None" default="None">
+  Use scientific notation for floats: `True` (always), `False` (never), `None` (auto).
+</ParamField>
+
+<ParamField path="output_float_precision" type="int | None" default="None">
+  Number of decimal places to write for float columns.
+</ParamField>
+
 <ParamField path="output_null_value" type="str | None" default="None">
   String to write for null values (defaults to empty string).
+</ParamField>
+
+<ParamField path="output_quote_style" type="str | None" default="None">
+  Quoting strategy: `\"necessary\"` (default), `\"always\"`, `\"never\"`, or `\"non_numeric\"`.
+</ParamField>
+
+<ParamField path="output_maintain_order" type="bool" default="True">
+  Maintain row order when writing. Set to `False` for a minor performance gain.
 </ParamField>
 
 </Expandable>

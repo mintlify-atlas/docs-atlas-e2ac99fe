@@ -142,7 +142,28 @@ For `@td.publisher`, `trigger_by=None` is already the default because publishers
 
 ## `StageTrigger`
 
-`StageTrigger` is used internally when a function is invoked by a stage worker (a server-side batch ingestion component). It is not typically constructed by end users.
+`StageTrigger` is an abstract base class for custom stage-based triggers. It is marked as **unstable** and subject to change in future releases. Subclass it and implement the `run(ctx)` method to create a trigger that continuously watches an external source and stages files for a `Stage`-backed publisher.
+
+```python
+from tabsdata import StageTrigger
+from tabsdata._io.stage_trigger import StageTriggerContext, StageTriggerStatus
+
+class MyTrigger(StageTrigger):
+    def run(self, ctx: StageTriggerContext) -> StageTriggerStatus:
+        # Watch source, stage parquet files, call ctx.trigger()
+        ...
+        return StageTriggerStatus.SUCCESS
+```
+
+<ParamField path="start" type="datetime | None" default="None">
+  Optional timezone-aware `datetime` after which the trigger becomes active.
+</ParamField>
+
+<ParamField path="end" type="datetime | None" default="None">
+  Optional timezone-aware `datetime` after which the trigger stops running.
+</ParamField>
+
+`StageTrigger` cannot be instantiated directly; you must subclass it. The `Stage` source plugin (`td.Stage`) is the corresponding publisher-side input plugin that reads files staged by a `StageTrigger`.
 
 ---
 

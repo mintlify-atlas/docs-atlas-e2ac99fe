@@ -21,7 +21,7 @@ td table list --coll <coll> [--name <wildcard>] [--at <time>] [--at-trx <trx-id>
 | Flag | Short | Required | Description |
 |------|-------|----------|-------------|
 | `--coll` | `-c` | Yes* | Collection whose tables are listed. Uses pinned collection if omitted. |
-| `--name` | | No | Name wildcard filter, e.g. `sales*` matches all tables starting with `sales`. |
+| `--name` | `-n` | No | Name wildcard filter, e.g. `sales*` matches all tables starting with `sales`. |
 | `--at` | | No | Show tables as they existed at the given time. Accepts unix ms timestamp or `YYYY-MM-DD[THH[:MM[:SS[.sss]]]][Z]`. Mutually exclusive with `--at-trx`. |
 | `--at-trx` | | No | Show tables as they existed at the end of the given transaction ID. Mutually exclusive with `--at`. |
 

@@ -372,7 +372,7 @@ SalesforceReportSource(
     report: str | list[str],
     column_name_strategy: "columnName" | "label",
     find_report_by: "id" | "name" = None,
-    filter: tuple | list[tuple] = None,
+    filter: tuple[str, str, str] | list[tuple[str, str, str]] = None,
     filter_logic: str = None,
     instance_url: str = None,
     last_modified_column: str = None,
